@@ -60,6 +60,19 @@ The worker (the site starts it automatically):
 
 Install the custom nodes once (a new folder; no existing node changes): copy `comfy_nodes\comfyui-w2m` to `ComfyUI\custom_nodes\comfyui-w2m` and restart ComfyUI. The tiny VAE goes in `ComfyUI\models\vae_approx\lighttaew2_1.safetensors` (from `huggingface.co/lightx2v/Autoencoders`). The LLM uses `C:\qd\llama-g4\build\bin\llama-server.exe` (override with `W2M_LLAMA_SERVER`) on the GGUF that Ollama already downloaded; it falls back to Ollama if llama-server is missing.
 
+## Acting quality: the mime, the video, the judged takes
+
+- **The mime prompt** (`mime_system_prompt.txt`; the previous version is kept in `prompts/mime_system_prompt.v1.txt`) asks for the most obvious charades sign:
+  - big arm and hand actions, held in front of the body and facing the viewer
+  - point at body parts (teeth means pointing at the mouth)
+  - do the literal hand sign (thumbs up means a fist held out in front of the chest, thumb up)
+  - never face-only or tiny actions
+
+  The site writes the mime on Groq (`gpt-oss-120b`, through its own quota handling). If Groq is busy, the worker's local qwen3.5-9b writes it instead.
+- **Video sampling** is now 6 steps with CFG 2 and LoRA 0.6 (it was 4 steps, CFG 1). With guidance the 1.3B model actually follows hand signs, at about +20 s per take. `--fast-video` restores the old setting.
+- **Judged takes** (`take_judge.py`): each take is filmed with a random seed. Four frames go to Groq's `qwen/qwen3.8-27b` vision model, which scores 0–10 how clearly the take shows the mime. The first take scoring 7 or more wins, otherwise the best of up to 3 (`--takes`, `--accept`). Body capture runs only on the winner. The judge costs about 1k tokens and 0.5–1 s per take. Without `GROQ_API_KEY`, the first take is used.
+- **Typical times:** about 50 s when the first take passes, about 80 s when a second take is needed.
+
 ## Characters on the site: skeleton, measurements, arm refinement
 
 Every clip also gets `<id>.rig.json` (`export_clip.export_rig`). The site's characters (`public/js/characters.js`) are built from it, so their proportions and placement come from the capture:

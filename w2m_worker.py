@@ -4,7 +4,7 @@
 
 GET  /health                     {"ok", "comfy", "llm", "busy", "queued"}
 GET  /cached?text=...            {"hit", "result"}  (no GPU work)
-POST /generate {"text", "fresh"?, "seed"?}
+POST /generate {"text", "fresh"?, "seed"?, "plan"?: {"prompt", "seconds", "model"}}  (no plan: the local LLM writes it)
      -> NDJSON stream: {"stage": "queued"|"plan"|"encode"|"video"|"decode"|"pose"|"body"|"hands"|"export", "t"}...
         then {"done": true, "id", "frames", "seconds", "prompt", "cached", "timings"} or {"error": "..."}
 POST /unload                     stop the LLM server and free ComfyUI's VRAM (the site calls this before HY/Gemma)
@@ -15,6 +15,7 @@ Run with ComfyUI's embedded Python.
 """
 import argparse
 import hashlib
+import random
 import json
 import os
 import re
@@ -35,8 +36,9 @@ from extract_hands_face import extract  # noqa: E402
 from mime_llm import MimeLLM  # noqa: E402
 from prepare_motion import prepare  # noqa: E402
 from refine_arms import refine  # noqa: E402
+from take_judge import judge  # noqa: E402
 
-PIPELINE_VERSION = "fast-1"   # bump to invalidate cached clips when the pipeline changes
+PIPELINE_VERSION = "fast-4"   # bump to invalidate cached clips when the pipeline changes (fast-2: charades-first mime prompt; fast-3: 6-step CFG 2 video; fast-4: judged takes)
 
 
 def slug(text):
@@ -129,7 +131,7 @@ class Worker:
             pass
         return None
 
-    def generate(self, text, emit, fresh=False, seed=None):
+    def generate(self, text, emit, fresh=False, seed=None, plan=None):
         if not fresh and (hit := self.cached(text)):
             emit({"done": True, **hit, "cached": True})
             return
@@ -141,32 +143,59 @@ class Worker:
             self.queued -= 1
             self.busy = text
             try:
-                self._run(text, emit, seed, t_req)
+                self._run(text, emit, seed, t_req, plan)
             finally:
                 self.busy = None
                 self.last_job = time.time()
 
-    def _run(self, text, emit, seed, t_req):
+    def _run(self, text, emit, seed, t_req, given=None):
         timings = {}
         t0 = time.time()
         mark = {"stage": None, "t": t0}
 
-        def stage(name):
+        def stage(name, **extra):
             now = time.time()
             if mark["stage"]:
                 timings[mark["stage"]] = round(timings.get(mark["stage"], 0) + now - mark["t"], 2)
             mark.update(stage=name, t=now)
             if name:
-                emit({"stage": name, "t": round(now - t0, 1)})
+                emit({"stage": name, "t": round(now - t0, 1), **extra})
 
         stage("plan")
-        plan = self.llm.plan(text)
+        if given and len(str(given.get("prompt", ""))) >= 20:  # written by the caller (the site uses Groq)
+            plan = {"prompt": str(given["prompt"])[:600], "seconds": float(given.get("seconds") or 3),
+                    "planner": str(given.get("model") or "caller")[:80]}
+        else:
+            plan = {**self.llm.plan(text), "planner": "local qwen3.5:9b"}
         stage("load")  # ComfyUI start-up / queueing / model loads until the first sampling node
         cg.ensure_comfy(self.server, self.a.portable_root)
         sid = hashlib.sha1(f"{text}|{seed}|{time.time()}".encode()).hexdigest()[:6]
         cid = f"wan-{slug(text)[:40]}-{sid}"
-        res = cg.generate(plan["prompt"], plan["seconds"], self.comfy_root, self.server, seed=seed,
-                          full_vae=self.a.full_vae, job=cid, on_stage=stage)
+        # Film up to N takes with different seeds; a vision model checks each one shows the mime and the first
+        # good take wins (otherwise the best). The small video model often misses hand signs on a given seed.
+        base_seed = int(seed) if seed is not None else random.randrange(2 ** 48)
+        takes, best = [], None
+        for k in range(max(1, self.a.takes)):
+            res = cg.film(plan["prompt"], plan["seconds"], self.comfy_root, self.server, seed=base_seed + k * 7919,
+                          full_vae=self.a.full_vae, fast_video=self.a.fast_video, job=cid, take=k + 1,
+                          on_stage=lambda s, k=k: stage(s, take=k + 1))
+            if self.a.takes <= 1:
+                best = res
+                break
+            stage("judge", take=k + 1)
+            v = judge(res["rgb"], text, plan["prompt"])
+            takes.append({"take": k + 1, "seed": base_seed + k * 7919, "score": v and v["score"], "seen": v and v["seen"]})
+            emit({"verdict": True, "take": k + 1, "score": v and v["score"], "seen": v and v["seen"]})
+            if v is None:  # no judge available: keep this take
+                best = res
+                break
+            if best is None or v["score"] > best["score"]:
+                best = {**res, "score": v["score"]}
+            if v["score"] >= self.a.accept:
+                break
+        stage("pose")
+        cap = cg.capture(best["rgb"], self.comfy_root, self.server, job=cid, on_stage=stage)
+        res = {**best, **cap}
         stage("hands")
         hf = os.path.join(res["dir"], "hands_face.npz")
         extract(res["rgb"], res["kps"], hf, self.mp_models, fps=16.0, verbose=False)
@@ -179,7 +208,7 @@ class Worker:
         stage(None)
         timings["total"] = round(time.time() - t0, 2)
         out = {"version": PIPELINE_VERSION, "text": text, "id": cid, "frames": info["frames"], "seconds": info["seconds"],
-               "prompt": plan["prompt"], "rgb": os.path.relpath(res["rgb"], os.path.join(self.comfy_root, "output")),
+               "prompt": plan["prompt"], "planner": plan["planner"], "takes": takes, "rgb": os.path.relpath(res["rgb"], os.path.join(self.comfy_root, "output")),
                "timings": timings, "createdAt": time.strftime("%Y-%m-%dT%H:%M:%S")}
         json.dump(out, open(self.cache_file(text), "w", encoding="utf-8"), indent=1)
         print(f"[worker] {text!r} -> {cid} in {timings['total']:.1f}s (queued {t0 - t_req:.1f}s) {timings}", flush=True)
@@ -238,7 +267,8 @@ def make_handler(worker):
                 except OSError:
                     pass  # client went away; the job still finishes and is cached
             try:
-                worker.generate(text, emit, fresh=bool(body.get("fresh")), seed=body.get("seed"))
+                worker.generate(text, emit, fresh=bool(body.get("fresh")), seed=body.get("seed"),
+                                plan=body.get("plan") if isinstance(body.get("plan"), dict) else None)
             except Exception as e:
                 traceback.print_exc()
                 emit({"error": str(e)[:500]})
@@ -254,6 +284,10 @@ def main():
     ap.add_argument("--port", type=int, default=8767)
     ap.add_argument("--idle-s", type=float, default=300, help="free the GPU after this long without jobs")
     ap.add_argument("--full-vae", action="store_true", help="decode with the full Wan VAE instead of the tiny one")
+    ap.add_argument("--fast-video", action="store_true",
+                    help="old 4-step CFG 1 sampling: ~22 s faster per clip, but hand signs are often wrong")
+    ap.add_argument("--takes", type=int, default=3, help="max video takes per phrase (judged by a vision model)")
+    ap.add_argument("--accept", type=float, default=7, help="judge score (0-10) that accepts a take")
     ap.add_argument("--warm", action="store_true", help="start ComfyUI and load the LLM right away")
     a = ap.parse_args()
     w = Worker(a)

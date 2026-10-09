@@ -70,8 +70,12 @@ def free_vram(server="http://127.0.0.1:8188"):
         pass
 
 
-def build_workflow(prompt, seconds, job, seed=None, full_vae=False, workflow=FAST_WORKFLOW):
+def build_workflow(prompt, seconds, job, seed=None, full_vae=False, fast_video=False, workflow=FAST_WORKFLOW):
     wf = json.load(open(workflow, encoding="utf-8"))
+    if fast_video:  # the old 4-step / CFG 1 sampling: ~22 s faster, but follows hand signs much less reliably
+        wf["117"]["inputs"].update(steps=4, end_at_step=2, cfg=1.0)
+        wf["110"]["inputs"].update(steps=4, start_at_step=2, end_at_step=4, cfg=1.0)
+        wf["111"]["inputs"]["strength_model"] = 0.8
     wf[PROMPT_NODE]["inputs"]["string_b"] = prompt
     wf[VACE_NODE]["inputs"]["length"] = frames_for(seconds)
     if seed is not None:
@@ -115,10 +119,10 @@ async def _run(server, wf, on_stage, timeout):
 
 
 def generate(prompt, seconds, comfy_root, server="http://127.0.0.1:8188", seed=None, full_vae=False,
-             job=None, on_stage=lambda s: None, timeout=900):
+             job=None, on_stage=lambda s: None, timeout=900, fast_video=False):
     """Returns {"rgb", "kps", "npz", "frames"} for one generated clip."""
     job = job or uuid.uuid4().hex[:12]
-    wf = build_workflow(prompt, seconds, job, seed, full_vae)
+    wf = build_workflow(prompt, seconds, job, seed, full_vae, fast_video)
     pid = asyncio.run(_run(server, wf, on_stage, timeout))
     for _ in range(50):  # the websocket can report completion a moment before history is written
         hist = _get(server, f"/history/{pid}")
@@ -135,6 +139,49 @@ def generate(prompt, seconds, comfy_root, server="http://127.0.0.1:8188", seed=N
     kps = sorted(f for f in os.listdir(job_dir) if f.startswith("kps") and f.endswith(".json"))[-1]
     return {"rgb": os.path.join(comfy_root, "output", vid.get("subfolder", ""), vid["filename"]),
             "kps": os.path.join(job_dir, kps), "npz": npz, "frames": frames_for(seconds), "job": job, "dir": job_dir}
+
+
+# ------------------------------------------------------------------ two-step: film takes, capture the best one
+CAPTURE_NODES = ["80", "126", "127", "128", "201", "202", "300", "301"]
+
+
+def _history(server, pid):
+    for _ in range(50):  # the websocket can report completion a moment before history is written
+        hist = _get(server, f"/history/{pid}")
+        if pid in hist and hist[pid].get("outputs"):
+            return hist[pid]["outputs"]
+        time.sleep(0.1)
+    raise RuntimeError(f"ComfyUI history missing for {pid}")
+
+
+def film(prompt, seconds, comfy_root, server="http://127.0.0.1:8188", seed=None, full_vae=False, fast_video=False,
+         job=None, take=1, on_stage=lambda s: None, timeout=900):
+    """Generate one video take only (no capture). Returns {"rgb", "frames"}."""
+    wf = build_workflow(prompt, seconds, job, seed, full_vae, fast_video)
+    for k in CAPTURE_NODES:
+        wf.pop(k, None)
+    wf[RGB_NODE]["inputs"]["filename_prefix"] = f"w2m/{job}/take{take}"
+    pid = asyncio.run(_run(server, wf, on_stage, timeout))
+    vid = (_history(server, pid)[RGB_NODE].get("gifs") or [None])[0]
+    return {"rgb": os.path.join(comfy_root, "output", vid.get("subfolder", ""), vid["filename"]), "frames": frames_for(seconds)}
+
+
+def capture(rgb, comfy_root, server="http://127.0.0.1:8188", job=None, on_stage=lambda s: None, timeout=900):
+    """DWPose + GVHMR on a saved take. Returns {"kps", "npz"}."""
+    full = json.load(open(FAST_WORKFLOW, encoding="utf-8"))
+    wf = {k: full[k] for k in CAPTURE_NODES}
+    wf["400"] = {"class_type": "VHS_LoadVideoPath", "inputs": {"video": rgb, "force_rate": 0, "custom_width": 0, "custom_height": 0,
+                 "frame_load_cap": 0, "skip_first_frames": 0, "select_every_nth": 1, "format": "None"}}
+    wf["80"]["inputs"]["image"] = ["400", 0]
+    wf["128"]["inputs"]["images"] = ["400", 0]
+    wf[KPS_NODE]["inputs"]["filename_prefix"] = f"w2m/{job}/kps"
+    pid = asyncio.run(_run(server, wf, on_stage, timeout))
+    out = _history(server, pid)
+    npz = out[NPZ_NODE]["text"]
+    npz = npz[0] if isinstance(npz, list) else npz
+    job_dir = os.path.join(comfy_root, "output", "w2m", job)
+    kps = sorted(f for f in os.listdir(job_dir) if f.startswith("kps") and f.endswith(".json"))[-1]
+    return {"kps": os.path.join(job_dir, kps), "npz": npz, "dir": job_dir}
 
 
 if __name__ == "__main__":

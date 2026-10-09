@@ -133,12 +133,12 @@
     "inputs": {
       "add_noise": "disable",
       "noise_seed": 206731543410744,
-      "steps": 4,
-      "cfg": 1,
+      "steps": 6,
+      "cfg": 2.0,
       "sampler_name": "lcm",
       "scheduler": "beta",
-      "start_at_step": 2,
-      "end_at_step": 4,
+      "start_at_step": 3,
+      "end_at_step": 6,
       "return_with_leftover_noise": "disable",
       "model": [
         "100",
@@ -165,7 +165,7 @@
   "111": {
     "inputs": {
       "lora_name": "Wan21_CausVid_bidirect2_T2V_1_3B_lora_rank32.safetensors",
-      "strength_model": 0.8,
+      "strength_model": 0.6,
       "strength_clip": 1,
       "model": [
         "102",
@@ -214,12 +214,12 @@
     "inputs": {
       "add_noise": "enable",
       "noise_seed": 768831528087772,
-      "steps": 4,
-      "cfg": 1,
+      "steps": 6,
+      "cfg": 2.0,
       "sampler_name": "lcm",
       "scheduler": "beta",
       "start_at_step": 0,
-      "end_at_step": 2,
+      "end_at_step": 3,
       "return_with_leftover_noise": "enable",
       "model": [
         "100",
