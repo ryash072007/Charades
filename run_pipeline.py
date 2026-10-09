@@ -1,13 +1,13 @@
-"""One clip -> procedural 3D character animation (MP4 + GLB).
+"""Phrase or clip -> motion for the charades site (+ optional Blender MP4 / GLB).
 
-Either generate a new clip through a running ComfyUI server:
-    python_embeded\\python.exe run_pipeline.py --phrase "eating burger"
+Either generate a new clip (starts ComfyUI if needed; the LLM is a resident llama-server, see mime_llm.py):
+    python_embeded\\python.exe run_pipeline.py --phrase "eating burger" [--mp4] [--glb]
 or process files that the mocap workflow already wrote:
     python_embeded\\python.exe run_pipeline.py --video output\\w2m\\clip_rgb_00001.mp4 \\
         --kps output\\w2m\\clip_kps_00001.json --npz output\\smpl_params_0004.npz
 
-Outputs go to ComfyUI/output/w2m/<name>/: <name>.mp4, <name>_compare.mp4, <name>.glb,
-plus the intermediate hands_face.npz / motion.npz.
+Outputs go to ComfyUI/output/w2m/<name>/: the site clip <name>.bin + <name>.w2m.bin (always),
+<name>.mp4 + <name>_compare.mp4 (--mp4), <name>.glb (--glb), plus hands_face.npz / motion.npz.
 """
 import argparse
 import os
@@ -54,8 +54,10 @@ def main():
     ap.add_argument("--samples", type=int, default=48, help="EEVEE samples per frame")
     ap.add_argument("--ground", choices=["per_frame", "global"], default="per_frame",
                     help="per_frame keeps a foot on the floor every frame; global allows jumps")
-    ap.add_argument("--no-glb", action="store_true")
-    ap.add_argument("--no-compare", action="store_true", help="skip the side-by-side video")
+    ap.add_argument("--mp4", action="store_true", help="also render an MP4 in Blender (~35 s extra)")
+    ap.add_argument("--glb", action="store_true", help="also export the animated GLB character (~10 s extra)")
+    ap.add_argument("--full-vae", action="store_true", help="decode with the full Wan VAE (+7 s)")
+    ap.add_argument("--no-compare", action="store_true", help="skip the side-by-side video (with --mp4)")
     ap.add_argument("--keep-frames", action="store_true")
     a = ap.parse_args()
 
@@ -63,8 +65,14 @@ def main():
     t0 = time.time()
 
     if a.phrase:
-        from comfy_generate import generate
-        g = generate(a.phrase, comfy, a.server)
+        import comfy_generate as cg
+        from mime_llm import MimeLLM
+        llm = MimeLLM()
+        plan = llm.plan(a.phrase)
+        llm.stop()
+        print(f"[pipeline] mime prompt ({plan['seconds']} s): {plan['prompt']}")
+        cg.ensure_comfy(a.server, os.path.dirname(comfy))
+        g = cg.generate(plan["prompt"], plan["seconds"], comfy, a.server, full_vae=a.full_vae, on_stage=lambda s: print(f"[comfy] {s}"))
         video, kps, npz = g["rgb"], g["kps"], g["npz"]
     else:
         if not (a.video and a.kps and a.npz):
@@ -91,15 +99,27 @@ def main():
     prepare(npz, hf, os.path.join(comfy, "models", "motion_capture", "body_models", "smpl", "SMPL_NEUTRAL.npz"),
             motion, ground=a.ground)
 
+    from export_clip import export
+    clip = export(motion, os.path.join(out_dir, f"{name}.bin"), os.path.join(out_dir, f"{name}.w2m.bin"))
+    print(f"[pipeline] site clip: {name}.bin + {name}.w2m.bin ({clip['frames']} frames @ 30 fps)")
+    if not (a.mp4 or a.glb):
+        print(f"[pipeline] done in {time.time() - t0:.0f}s -> {out_dir}")
+        return
+
     frames = os.path.join(out_dir, "frames")
     shutil.rmtree(frames, ignore_errors=True)
     glb = os.path.join(out_dir, f"{name}.glb")
     cmd = [a.blender, "-b", "--factory-startup", "--python", os.path.join(HERE, "blender_character.py"), "--",
-           "--motion", motion, "--frames-dir", frames, "--width", a.width, "--height", a.height,
-           "--color", a.color, "--samples", a.samples]
-    if not a.no_glb:
+           "--motion", motion, "--width", a.width, "--height", a.height, "--color", a.color, "--samples", a.samples]
+    if a.mp4:
+        cmd += ["--frames-dir", frames]
+    if a.glb:
         cmd += ["--glb", glb]
     run(cmd)
+    if not a.mp4:
+        print(f"[pipeline] done in {time.time() - t0:.0f}s")
+        print(f"[pipeline] GLB : {glb}")
+        return
 
     ff = ffmpeg_exe()
     mp4 = os.path.join(out_dir, f"{name}.mp4")
@@ -116,7 +136,7 @@ def main():
         shutil.rmtree(frames, ignore_errors=True)
     print(f"[pipeline] done in {time.time() - t0:.0f}s")
     print(f"[pipeline] MP4 : {mp4}")
-    if not a.no_glb:
+    if a.glb:
         print(f"[pipeline] GLB : {glb}")
 
 

@@ -1,0 +1,381 @@
+{
+  "80": {
+    "inputs": {
+      "detect_hand": "enable",
+      "detect_body": "enable",
+      "detect_face": "enable",
+      "resolution": 512,
+      "bbox_detector": "yolox_l.torchscript.pt",
+      "pose_estimator": "dw-ll_ucoco_384_bs5.torchscript.pt",
+      "scale_stick_for_xinsr_cn": "disable",
+      "image": [
+        "103",
+        0
+      ]
+    },
+    "class_type": "DWPreprocessor",
+    "_meta": {
+      "title": "DWPose Estimator"
+    }
+  },
+  "91": {
+    "inputs": {
+      "string_a": "Wide long shot, static camera, empty white studio with a plain floor. One person, small in the center of the frame, fully visible from head to feet with wide empty margins on all sides so outstretched arms and legs are never cropped. The person wears a fitted plain t-shirt and trousers.",
+      "string_b": "PROMPT_PLACEHOLDER",
+      "delimiter": " "
+    },
+    "class_type": "StringConcatenate",
+    "_meta": {
+      "title": "Concatenate Text"
+    }
+  },
+  "97": {
+    "inputs": {
+      "vae_name": "wan_2.1_vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "98": {
+    "inputs": {
+      "clip_name": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+      "type": "wan",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "99": {
+    "inputs": {
+      "trim_amount": [
+        "101",
+        3
+      ],
+      "samples": [
+        "110",
+        0
+      ]
+    },
+    "class_type": "TrimVideoLatent",
+    "_meta": {
+      "title": "TrimVideoLatent"
+    }
+  },
+  "100": {
+    "inputs": {
+      "shift": 6,
+      "model": [
+        "111",
+        0
+      ]
+    },
+    "class_type": "ModelSamplingSD3",
+    "_meta": {
+      "title": "ModelSamplingSD3"
+    }
+  },
+  "101": {
+    "inputs": {
+      "positive": [
+        "114",
+        0
+      ],
+      "negative": [
+        "115",
+        0
+      ],
+      "vae": [
+        "97",
+        0
+      ],
+      "width": 480,
+      "height": 832,
+      "length": 49,
+      "batch_size": 1,
+      "strength": 1
+    },
+    "class_type": "W2MWanVaceToVideoCached",
+    "_meta": {
+      "title": "WanVaceToVideo (cached blank control)"
+    }
+  },
+  "102": {
+    "inputs": {
+      "unet_name": "wan2.1_vace_1.3B_fp16.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "103": {
+    "inputs": {
+      "samples": [
+        "99",
+        0
+      ],
+      "vae": [
+        "302",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "110": {
+    "inputs": {
+      "add_noise": "disable",
+      "noise_seed": 206731543410744,
+      "steps": 4,
+      "cfg": 1,
+      "sampler_name": "lcm",
+      "scheduler": "beta",
+      "start_at_step": 2,
+      "end_at_step": 4,
+      "return_with_leftover_noise": "disable",
+      "model": [
+        "100",
+        0
+      ],
+      "positive": [
+        "101",
+        0
+      ],
+      "negative": [
+        "101",
+        1
+      ],
+      "latent_image": [
+        "117",
+        0
+      ]
+    },
+    "class_type": "KSamplerAdvanced",
+    "_meta": {
+      "title": "KSampler (Advanced)"
+    }
+  },
+  "111": {
+    "inputs": {
+      "lora_name": "Wan21_CausVid_bidirect2_T2V_1_3B_lora_rank32.safetensors",
+      "strength_model": 0.8,
+      "strength_clip": 1,
+      "model": [
+        "102",
+        0
+      ],
+      "clip": [
+        "98",
+        0
+      ]
+    },
+    "class_type": "LoraLoader",
+    "_meta": {
+      "title": "Load LoRA (Model and CLIP)"
+    }
+  },
+  "114": {
+    "inputs": {
+      "text": [
+        "91",
+        0
+      ],
+      "clip": [
+        "111",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Positive Prompt)"
+    }
+  },
+  "115": {
+    "inputs": {
+      "text": "blurry, out of focus, motion blur, camera shake, soft focus, double image, ghosting, streaks, low resolution, pixelated, compression artifacts, jpeg artifacts, noise, grain, smudged lines, watercolor bleed, painterly smudge, depth of field, shaky camera, overblurred, motion streaks, fuzzy edges, low detail, low quality, trees, blobs, floor, horizon",
+      "clip": [
+        "111",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Negative Prompt)"
+    }
+  },
+  "117": {
+    "inputs": {
+      "add_noise": "enable",
+      "noise_seed": 768831528087772,
+      "steps": 4,
+      "cfg": 1,
+      "sampler_name": "lcm",
+      "scheduler": "beta",
+      "start_at_step": 0,
+      "end_at_step": 2,
+      "return_with_leftover_noise": "enable",
+      "model": [
+        "100",
+        0
+      ],
+      "positive": [
+        "101",
+        0
+      ],
+      "negative": [
+        "101",
+        1
+      ],
+      "latent_image": [
+        "101",
+        2
+      ]
+    },
+    "class_type": "KSamplerAdvanced",
+    "_meta": {
+      "title": "KSampler (Advanced)"
+    }
+  },
+  "126": {
+    "inputs": {
+      "model_path_override": "",
+      "precision": "auto",
+      "attention": "auto",
+      "load_dpvo": false
+    },
+    "class_type": "LoadGVHMRModels",
+    "_meta": {
+      "title": "Load GVHMR Models"
+    }
+  },
+  "127": {
+    "inputs": {
+      "moving_camera": false,
+      "focal_length_mm": 0,
+      "bbox_scale": 1.2,
+      "vo_method": "simple_vo",
+      "vo_scale": 0.5,
+      "vo_step": 8,
+      "chunk_size": 32,
+      "video": [
+        "128",
+        0
+      ],
+      "video_mask": [
+        "301",
+        0
+      ],
+      "config": [
+        "126",
+        0
+      ]
+    },
+    "class_type": "GVHMRInference",
+    "_meta": {
+      "title": "GVHMR Inference"
+    }
+  },
+  "128": {
+    "inputs": {
+      "fps": 16,
+      "images": [
+        "103",
+        0
+      ]
+    },
+    "class_type": "CreateVideo",
+    "_meta": {
+      "title": "Create Video"
+    }
+  },
+  "200": {
+    "inputs": {
+      "frame_rate": 16,
+      "loop_count": 0,
+      "filename_prefix": "w2m/clip_rgb",
+      "format": "video/nvenc_h264-mp4",
+      "pix_fmt": "yuv420p",
+      "bitrate": 20,
+      "megabit": true,
+      "save_metadata": true,
+      "pingpong": false,
+      "save_output": true,
+      "images": [
+        "103",
+        0
+      ]
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "Save RGB clip (mocap)"
+    }
+  },
+  "201": {
+    "inputs": {
+      "pose_kps": [
+        "80",
+        1
+      ],
+      "filename_prefix": "w2m/clip_kps"
+    },
+    "class_type": "SavePoseKpsAsJsonFile",
+    "_meta": {
+      "title": "Save DWPose keypoints (mocap)"
+    }
+  },
+  "202": {
+    "inputs": {
+      "source": [
+        "127",
+        0
+      ]
+    },
+    "class_type": "PreviewAny",
+    "_meta": {
+      "title": "GVHMR npz path (mocap)"
+    }
+  },
+  "300": {
+    "inputs": {
+      "pose_kps": [
+        "80",
+        1
+      ],
+      "margin": 0.04,
+      "min_confidence": 0.3
+    },
+    "class_type": "W2MPoseKpsToBBoxMask",
+    "_meta": {
+      "title": "DWPose bbox mask (replaces SAM3)"
+    }
+  },
+  "301": {
+    "inputs": {
+      "fps": 16,
+      "images": [
+        "300",
+        0
+      ]
+    },
+    "class_type": "CreateVideo",
+    "_meta": {
+      "title": "Mask video"
+    }
+  },
+  "302": {
+    "inputs": {
+      "vae_name": "lighttaew2_1.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Tiny VAE (optional decode)"
+    }
+  }
+}
