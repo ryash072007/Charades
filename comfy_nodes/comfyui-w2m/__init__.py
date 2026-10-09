@@ -117,11 +117,61 @@ class W2MWanVaceToVideoCached:
         return (positive, negative, {"samples": latent}, 0)
 
 
+class W2MWanImageToVideoCached:
+    """WanImageToVideo (start image only) with the encoded start-image video cached. The stock node VAE-encodes the
+    start image plus (length - 1) grey frames on every run (~5 s at 480x832x49), but that only depends on the image,
+    size and length, which stay the same for every phrase with a fixed reference character."""
+    _cache = {}
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {
+            "positive": ("CONDITIONING",),
+            "negative": ("CONDITIONING",),
+            "vae": ("VAE",),
+            "start_image": ("IMAGE",),
+            "width": ("INT", {"default": 480, "min": 16, "max": 4096, "step": 16}),
+            "height": ("INT", {"default": 832, "min": 16, "max": 4096, "step": 16}),
+            "length": ("INT", {"default": 49, "min": 1, "max": 4096, "step": 4}),
+            "batch_size": ("INT", {"default": 1, "min": 1, "max": 64}),
+        }}
+
+    RETURN_TYPES = ("CONDITIONING", "CONDITIONING", "LATENT")
+    RETURN_NAMES = ("positive", "negative", "latent")
+    FUNCTION = "run"
+    CATEGORY = "WANPhrase2Motion"
+
+    def run(self, positive, negative, vae, start_image, width, height, length, batch_size):
+        import hashlib
+        import comfy.utils
+        latent = torch.zeros([batch_size, 16, ((length - 1) // 4) + 1, height // 8, width // 8],
+                             device=comfy.model_management.intermediate_device())
+        img = comfy.utils.common_upscale(start_image[:length].movedim(-1, 1), width, height, "bilinear", "center").movedim(1, -1)
+        key = (id(vae), width, height, length, hashlib.sha1(img.float().cpu().numpy().tobytes()).hexdigest())
+        cached = self._cache.get(key)
+        if cached is None:
+            video = torch.ones((length, height, width, img.shape[-1]), device=img.device, dtype=img.dtype) * 0.5
+            video[:img.shape[0]] = img
+            concat = vae.encode(video[:, :, :, :3])
+            mask = torch.ones((1, 1, latent.shape[2], concat.shape[-2], concat.shape[-1]), device=img.device, dtype=img.dtype)
+            mask[:, :, :((img.shape[0] - 1) // 4) + 1] = 0.0
+            if len(self._cache) > 8:
+                self._cache.clear()
+            cached = self._cache[key] = (concat, mask)
+        concat, mask = cached
+        vals = {"concat_latent_image": concat, "concat_mask": mask}
+        positive = node_helpers.conditioning_set_values(positive, vals)
+        negative = node_helpers.conditioning_set_values(negative, vals)
+        return (positive, negative, {"samples": latent})
+
+
 NODE_CLASS_MAPPINGS = {
     "W2MPoseKpsToBBoxMask": W2MPoseKpsToBBoxMask,
     "W2MWanVaceToVideoCached": W2MWanVaceToVideoCached,
+    "W2MWanImageToVideoCached": W2MWanImageToVideoCached,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "W2MPoseKpsToBBoxMask": "Pose Keypoints to BBox Mask (W2M)",
     "W2MWanVaceToVideoCached": "WanVaceToVideo, cached blank control (W2M)",
+    "W2MWanImageToVideoCached": "WanImageToVideo, cached start-image encode (W2M)",
 }

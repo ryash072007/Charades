@@ -46,13 +46,32 @@ def comfy_up(server):
         return False
 
 
+def msvc_env():
+    """The environment after Visual Studio's vcvars64.bat (cl.exe on PATH), so torch.compile / Triton can build
+    kernels inside ComfyUI. None if Visual Studio isn't installed."""
+    vswhere = os.path.join(os.environ.get("ProgramFiles(x86)", "C:/Program Files (x86)"), "Microsoft Visual Studio", "Installer", "vswhere.exe")
+    if not os.path.isfile(vswhere):
+        return None
+    try:
+        path = subprocess.run([vswhere, "-latest", "-products", "*", "-property", "installationPath"],
+                              capture_output=True, text=True, timeout=30).stdout.strip()
+        bat = os.path.join(path, "VC", "Auxiliary", "Build", "vcvars64.bat")
+        if not os.path.isfile(bat):
+            return None
+        out = subprocess.run(["cmd", "/c", bat, "&&", "set"], capture_output=True, text=True, timeout=120).stdout
+        env = dict(line.split("=", 1) for line in out.splitlines() if "=" in line and not line.startswith("="))
+        return env if "VCINSTALLDIR" in env else None
+    except Exception:
+        return None
+
+
 def ensure_comfy(server="http://127.0.0.1:8188", portable_root=DEFAULT_COMFY, wait_s=180):
     """Start ComfyUI (same flags as the owner's launcher) if it isn't answering."""
     if comfy_up(server):
         return False
     py = os.path.join(portable_root, "python_embeded", "python.exe")
     log = open(os.path.join(HERE, "logs", "comfyui.log"), "a") if os.path.isdir(os.path.join(HERE, "logs")) else subprocess.DEVNULL
-    subprocess.Popen([py, os.path.join("ComfyUI", "main.py"), *COMFY_ARGS], cwd=portable_root,
+    subprocess.Popen([py, os.path.join("ComfyUI", "main.py"), *COMFY_ARGS], cwd=portable_root, env=msvc_env() or None,
                      stdout=log, stderr=subprocess.STDOUT, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     t0 = time.time()
     while time.time() - t0 < wait_s:

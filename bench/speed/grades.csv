@@ -1,0 +1,13 @@
+variant,phrase,clip,gesture_1to5,readable_1to5,stickman_style_1to5,body_integrity_1to5,motion_1to5,acceptable_vs_baseline_yes_no,note
+baseline,thumbs_up,clips/baseline/thumbs_up.mp4,,,,,,,
+baseline,teeth,clips/baseline/teeth.mp4,,,,,,,
+baseline,eating_burger,clips/baseline/eating_burger.mp4,,,,,,,
+baseline,peace_sign,clips/baseline/peace_sign.mp4,,,,,,,
+nvfp4_cache_tae,thumbs_up,clips/nvfp4_cache_tae/thumbs_up.mp4,,,,,,,
+nvfp4_cache_tae,teeth,clips/nvfp4_cache_tae/teeth.mp4,,,,,,,
+nvfp4_cache_tae,eating_burger,clips/nvfp4_cache_tae/eating_burger.mp4,,,,,,,
+nvfp4_cache_tae,peace_sign,clips/nvfp4_cache_tae/peace_sign.mp4,,,,,,,
+nvfp4_384_sharp,thumbs_up,clips/nvfp4_384_sharp/thumbs_up.mp4,,,,,,,
+nvfp4_384_sharp,teeth,clips/nvfp4_384_sharp/teeth.mp4,,,,,,,
+nvfp4_384_sharp,eating_burger,clips/nvfp4_384_sharp/eating_burger.mp4,,,,,,,
+nvfp4_384_sharp,peace_sign,clips/nvfp4_384_sharp/peace_sign.mp4,,,,,,,
