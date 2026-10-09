@@ -9,7 +9,8 @@ POST /generate {"text", "fresh"?, "seed"?}
         then {"done": true, "id", "frames", "seconds", "prompt", "cached", "timings"} or {"error": "..."}
 POST /unload                     stop the LLM server and free ComfyUI's VRAM (the site calls this before HY/Gemma)
 
-Clip files land in --clips-dir as <id>.bin (site format) + <id>.w2m.bin (fingers/face sidecar).
+Clip files land in --clips-dir as <id>.bin (site format), <id>.w2m.bin (fingers/face sidecar for the stick figure)
+and <id>.rig.json (skeleton + rotations + body measurements for the skinned characters).
 Run with ComfyUI's embedded Python.
 """
 import argparse
@@ -29,10 +30,11 @@ sys.path.insert(0, HERE)
 os.makedirs(os.path.join(HERE, "logs"), exist_ok=True)
 
 import comfy_generate as cg  # noqa: E402
-from export_clip import export  # noqa: E402
+from export_clip import export, export_rig  # noqa: E402
 from extract_hands_face import extract  # noqa: E402
 from mime_llm import MimeLLM  # noqa: E402
 from prepare_motion import prepare  # noqa: E402
+from refine_arms import refine  # noqa: E402
 
 PIPELINE_VERSION = "fast-1"   # bump to invalidate cached clips when the pipeline changes
 
@@ -57,6 +59,32 @@ class Worker:
         self.busy = None
         self.last_job = 0.0
         threading.Thread(target=self._idle, daemon=True).start()
+        threading.Thread(target=self._backfill_rigs, daemon=True).start()
+
+    def _backfill_rigs(self):
+        """Upgrade clips made by older pipeline versions from their saved motion.npz (CPU, ~1 s each): arms refined
+        against the video's 2D keypoints (original kept as motion_unrefined.npz), clip files re-exported, rig added."""
+        import shutil
+        import numpy as np
+        for f in os.listdir(self.a.cache_dir):
+            try:
+                r = json.load(open(os.path.join(self.a.cache_dir, f), encoding="utf-8"))
+                cid = r["id"]
+                job = os.path.join(self.comfy_root, "output", "w2m", cid)
+                motion, kps = os.path.join(job, "motion.npz"), os.path.join(job, "kps_00001.json")
+                rig = os.path.join(self.a.clips_dir, f"{cid}.rig.json")
+                if not os.path.isfile(motion):
+                    continue
+                refined = "refined" in np.load(motion).files
+                if not refined and os.path.isfile(kps):
+                    shutil.copy(motion, os.path.join(job, "motion_unrefined.npz"))
+                    refine(motion, kps, self.smpl, verbose=False)
+                    export(motion, os.path.join(self.a.clips_dir, f"{cid}.bin"), os.path.join(self.a.clips_dir, f"{cid}.w2m.bin"))
+                if not refined or not os.path.isfile(rig):
+                    export_rig(motion, rig, self.smpl)
+                    print(f"[worker] upgraded {cid} (arms refined, rig written)", flush=True)
+            except Exception as e:
+                print(f"[worker] upgrade {f}: {e}", flush=True)
 
     def _idle(self):
         while True:
@@ -127,7 +155,9 @@ class Worker:
         stage("export")
         motion = os.path.join(res["dir"], "motion.npz")
         prepare(res["npz"], hf, self.smpl, motion)
+        refine(motion, res["kps"], self.smpl, verbose=False)
         info = export(motion, os.path.join(self.a.clips_dir, f"{cid}.bin"), os.path.join(self.a.clips_dir, f"{cid}.w2m.bin"))
+        export_rig(motion, os.path.join(self.a.clips_dir, f"{cid}.rig.json"), self.smpl)
         stage(None)
         timings["total"] = round(time.time() - t0, 2)
         out = {"version": PIPELINE_VERSION, "text": text, "id": cid, "frames": info["frames"], "seconds": info["seconds"],

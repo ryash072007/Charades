@@ -88,7 +88,7 @@ def prepare(gvhmr_npz, hands_face_npz, smpl_model_path, out_path, ground="per_fr
     G, P = fk(J, local, root)
 
     hf = np.load(hands_face_npz)
-    np.savez(out_path, rest_joints=J.astype(np.float32), parents=PARENTS, local_rot=local.astype(np.float32),
+    np.savez(out_path, rest_joints=J.astype(np.float32), parents=PARENTS, local_rot=local.astype(np.float32), betas=betas,
              root_pos=root.astype(np.float32), joints=P.astype(np.float32),
              finger_angles=hf["finger_angles"][:T], hand_valid=hf["hand_valid"][:T],
              face=hf["face"][:T], face_channels=hf["face_channels"], fps=float(hf["fps"]))

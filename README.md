@@ -60,6 +60,15 @@ The worker (the site starts it automatically):
 
 Install the custom nodes once (a new folder; no existing node changes): copy `comfy_nodes\comfyui-w2m` to `ComfyUI\custom_nodes\comfyui-w2m` and restart ComfyUI. The tiny VAE goes in `ComfyUI\models\vae_approx\lighttaew2_1.safetensors` (from `huggingface.co/lightx2v/Autoencoders`). The LLM uses `C:\qd\llama-g4\build\bin\llama-server.exe` (override with `W2M_LLAMA_SERVER`) on the GGUF that Ollama already downloaded; it falls back to Ollama if llama-server is missing.
 
+## Characters on the site: skeleton, measurements, arm refinement
+
+Every clip also gets `<id>.rig.json` (`export_clip.export_rig`). The site's characters (`public/js/characters.js`) are built from it, so their proportions and placement come from the capture:
+- **Skeleton:** the clip's SMPL rest joints and per-frame joint rotations at 30 fps. Forward kinematics from these matches the position clip to within 0.5 mm on average.
+- **Body measurements** (`body_dims.py`): limb thickness, torso cross-sections, head centre and size, eye and mouth height, and hand and foot size, all measured on the SMPL body with the clip's betas. Only these numbers leave the PC, never the SMPL mesh.
+- **Ground lift:** how far to raise a character so its measured soles touch the floor.
+
+`refine_arms.py` corrects GVHMR's arms against the video's DWPose 2D wrists before export. It works relative to the face when the hand is near it, otherwise relative to the shoulder, using two-bone IK that keeps depth, elbow direction and hand orientation. On four test takes, the wrist error relative to the mouth fell from 0.28–0.49 to 0.10–0.20 nose-to-shoulder units (about 5–10 cm → 2–4 cm). The worker upgrades clips made before this on start-up and keeps `motion_unrefined.npz` as a backup.
+
 ## Requirements
 
 - ComfyUI portable at `C:\Users\ryash\OneDrive\Documents\AI\ComfyUI_windows_portable` with the custom nodes already installed (`comfyui-motioncapture`, `comfyui_controlnet_aux`, `comfyui-videohelpersuite`, `comfyui-ollama`, SAM3). No new pip packages are needed: `mediapipe`, `av`, `scipy` and `imageio-ffmpeg` are already in `python_embeded`.
