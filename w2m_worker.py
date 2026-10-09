@@ -3,6 +3,7 @@
     python_embeded\\python.exe w2m_worker.py --clips-dir <site>/data/mocap/clips --cache-dir <site>/data/w2m-wan
 
 GET  /health                     {"ok", "comfy", "llm", "busy", "queued"}
+GET  /cached?text=...            {"hit", "result"}  (no GPU work)
 POST /generate {"text", "fresh"?, "seed"?}
      -> NDJSON stream: {"stage": "queued"|"plan"|"encode"|"video"|"decode"|"pose"|"body"|"hands"|"export", "t"}...
         then {"done": true, "id", "frames", "seconds", "prompt", "cached", "timings"} or {"error": "..."}
@@ -153,6 +154,11 @@ def make_handler(worker):
             self.wfile.write(body)
 
         def do_GET(self):
+            if self.path.startswith("/cached?"):
+                from urllib.parse import parse_qs, urlparse
+                text = re.sub(r"\s+", " ", parse_qs(urlparse(self.path).query).get("text", [""])[0]).strip()[:80]
+                hit = worker.cached(text) if text else None
+                return self._json(200, {"hit": bool(hit), "result": hit})
             if self.path == "/health":
                 return self._json(200, {"ok": True, "comfy": cg.comfy_up(worker.server), "llm": worker.llm.proc is not None and worker.llm.proc.poll() is None,
                                         "busy": worker.busy, "queued": worker.queued, "version": PIPELINE_VERSION})

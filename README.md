@@ -16,6 +16,50 @@ phrase ─► Ollama ─► Wan 2.1 VACE clip ─┬─► DWPose keypoints ─�
 | Smoothing | Zero-lag (two-pass) One Euro filter on finger angles and face channels |
 | Character | Procedural: tapered capsule limbs, pill torso skinned along the spine, mitten hands with 3-bone capsule fingers, round head with ink eyes/brows/mouth driven by shape keys |
 
+## Fast path (default) and the phrase worker
+
+`run_pipeline.py --phrase` and `w2m_worker.py` use **`wanphrase2motion_fast.json`**. It differs from the mocap workflow in four ways:
+- the LLM runs outside ComfyUI
+- SAM3 is replaced by a box mask from DWPose
+- the blank control video's VAE encoding is cached
+- decoding uses the tiny `lighttaew2_1` VAE
+
+The default output is the charades-site clip (`.bin` + `.w2m.bin` fingers/face sidecar); the Blender MP4 and GLB are opt-in (`--mp4`, `--glb`).
+
+Time per 49-frame clip on the RTX 5060 Ti, measured on 2026-10-09/10:
+
+| Stage | Before | After | Change |
+|---|---|---|---|
+| Mime LLM | 6–9 s (Ollama, model reloaded every run, thinking on) | ~1 s (resident llama-server; ~5 s on first use) | `mime_llm.py` |
+| Text encode | 2.5–5.8 s | 2–5 s | unchanged (more variable when VRAM is tight) |
+| VACE conditioning | 9.5–10 s | ~0 s (4.6 s on first run) | cached blank-control latent; frames bit-identical |
+| Sampling | 9.5 s | 9.4 s | unchanged |
+| VAE decode | 8–12.6 s | 0.8 s | tiny VAE; GVHMR joints within 2 mm, fingers/face within MediaPipe noise |
+| DWPose | 2.3 s | 2.3 s | unchanged |
+| SAM3 mask | 21 s | ~0 s | DWPose box; GVHMR joints within 6 mm (p95 15 mm) |
+| GVHMR | 10–10.6 s | 8.5–10 s | unchanged |
+| Preview nodes / saves | ~2 s | 0.3 s | removed |
+| Hands + face | 1.7 s | 1.2–2.4 s | unchanged |
+| Blender MP4 + ffmpeg | ~40 s | 0 s (opt-in, ~35 s) | site plays the motion in three.js |
+| **Total** | **~2 min** | **26–28 s warm, ~31 s through the site, 43 s cold, instant if cached** | |
+
+Measured on 2026-10-09: the 12-minute run reported earlier didn't reproduce; the same command took 43 s after ComfyUI. The first run was most likely slowed by something else using the GPU.
+
+The worker (the site starts it automatically):
+
+```powershell
+& $PY w2m_worker.py --clips-dir <site>\data\mocap\clips --cache-dir <site>\data\w2m-wan   # port 8767
+```
+
+- `POST /generate {"text"}` streams NDJSON stages and ends with `{"done": true, "id", ...}`.
+- `GET /cached?text=` checks the cache without GPU work.
+- `POST /unload` frees the GPU (ComfyUI `/free` plus stopping the LLM).
+- It starts ComfyUI with your usual flags if it isn't running.
+- It frees the GPU after 5 idle minutes.
+- Results are cached per normalised phrase. Bump `PIPELINE_VERSION` to invalidate them.
+
+Install the custom nodes once (a new folder; no existing node changes): copy `comfy_nodes\comfyui-w2m` to `ComfyUI\custom_nodes\comfyui-w2m` and restart ComfyUI. The tiny VAE goes in `ComfyUI\models\vae_approx\lighttaew2_1.safetensors` (from `huggingface.co/lightx2v/Autoencoders`). The LLM uses `C:\qd\llama-g4\build\bin\llama-server.exe` (override with `W2M_LLAMA_SERVER`) on the GGUF that Ollama already downloaded; it falls back to Ollama if llama-server is missing.
+
 ## Requirements
 
 - ComfyUI portable at `C:\Users\ryash\OneDrive\Documents\AI\ComfyUI_windows_portable` with the custom nodes already installed (`comfyui-motioncapture`, `comfyui_controlnet_aux`, `comfyui-videohelpersuite`, `comfyui-ollama`, SAM3). No new pip packages are needed: `mediapipe`, `av`, `scipy` and `imageio-ffmpeg` are already in `python_embeded`.
