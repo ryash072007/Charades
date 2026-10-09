@@ -152,8 +152,13 @@ def wan22_a14b_i2v(prompt, start="relaxed_stickman.png"):
     return wf
 
 
+APPENDAGES = ("The stickman has round blue hands with five short fingers, small round ears on both sides of the head "
+              "and a small button nose. ")
+
 MODELS = {
     "wan22_a14b_i2v": wan22_a14b_i2v,
+    # the owner's improved reference: same stickman with hands, fingers, ears and a nose
+    "wan22_a14b_i2v_app": lambda p: wan22_a14b_i2v(p.replace(STYLE, STYLE + APPENDAGES), start="relaxed_stickman_appendages.jpg"),
     "wan22_5b": lambda p: wan22_5b(p),
     "wan22_5b_ref": lambda p: wan22_5b(p, ref=True),
     "wan22_a14b": wan22_a14b,

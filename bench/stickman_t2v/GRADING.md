@@ -13,6 +13,8 @@ same Groq-written mime (see `MIMES` in `run_bench.py`), the same seed, and no st
 | `ltx23_ref` | LTX-2.3 | same, conditioned on `tpose_stickman.png` |
 | `wan22_a14b_i2v` | Wan 2.2 A14B **image-to-video**, Q4_K_M GGUF | starts from `refs/relaxed_stickman.png` so every clip is the same character; I2V Lightning 4-step, 16 fps |
 
+| `wan22_a14b_i2v_app` | Wan 2.2 A14B image-to-video | same, from `refs/relaxed_stickman_appendages.jpg` (fingers, ears, nose); prompt mentions them |
+
 Round 2 adds `wan22_a14b_i2v`. For it, also note whether all four clips show **the same character as the reference**.
 
 Score each clip from **1 (bad) to 5 (great)** in `grades.csv` on:
