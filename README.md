@@ -67,6 +67,12 @@ Every clip also gets `<id>.rig.json` (`export_clip.export_rig`). The site's char
 - **Body measurements** (`body_dims.py`): limb thickness, torso cross-sections, head centre and size, eye and mouth height, and hand and foot size, all measured on the SMPL body with the clip's betas. Only these numbers leave the PC, never the SMPL mesh.
 - **Ground lift:** how far to raise a character so its measured soles touch the floor.
 
+**Body model: SMPL-X.** GVHMR fits SMPL-X, so its betas and pose are SMPL-X parameters, and the skeleton, measurements and refinement all use `SMPLX_NEUTRAL.npz`. (Before 2026-10-10 they wrongly used SMPL; the worker migrates those clips on start-up.) For the **Exact fit** character, `smplx_export.py` writes:
+- `<id>.smplx.bin`: the clip's fitted SMPL-X rest mesh, 126 KB.
+- a shared `smplx-template.bin` (220 KB): faces, top-4 skin weights over the 55 joints, and part codes for colouring (skin, eyes, top, bottom, shoes, hair).
+
+The browser skins that mesh on the clip's skeleton, curls the 15 finger joints per hand from the captured angles, and opens the jaw from `jawOpen`. With SMPL-X, the wrist error relative to the mouth is 0.06–0.15 units on average (about 1–3 cm).
+
 `refine_arms.py` corrects GVHMR's arms against the video's DWPose 2D wrists before export. It works relative to the face when the hand is near it, otherwise relative to the shoulder, using two-bone IK that keeps depth, elbow direction and hand orientation. On four test takes, the wrist error relative to the mouth fell from 0.28–0.49 to 0.10–0.20 nose-to-shoulder units (about 5–10 cm → 2–4 cm). The worker upgrades clips made before this on start-up and keeps `motion_unrefined.npz` as a backup.
 
 ## Requirements

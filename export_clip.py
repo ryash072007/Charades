@@ -8,6 +8,7 @@
                 [47:59] hand frames, unit vectors in clip space: L dir, L thumb-side, R dir, R thumb-side
 """
 import json
+import os
 
 import numpy as np
 from scipy.spatial.transform import Rotation, Slerp
@@ -125,8 +126,14 @@ def export_rig(motion_npz, out_json, smpl_model):
     G30, P30 = fk(J * s, Rotation.from_quat(quats.reshape(-1, 4)).as_matrix().reshape(len(t_out), 22, 3, 3), root30)
     sole = np.einsum("tkij,j->tki", G30[:, [7, 8]], [0.0, dims["foot"]["sole"], 0.0])[..., 1] + P30[:, [7, 8], 1]
     lift = float(-np.percentile(sole.min(1), 3))
+    rig_extra = {}
+    if len(np.load(smpl_model)["J_regressor"]) >= 55:  # SMPL-X: also the exact fitted mesh for the "Exact fit" character
+        import smplx_export
+        smplx_export.ensure_template(smpl_model, os.path.dirname(os.path.abspath(out_json)))
+        rot30 = Rotation.from_quat(quats.reshape(-1, 4)).as_matrix().reshape(len(t_out), 22, 3, 3)
+        rig_extra["smplx"] = smplx_export.export(smpl_model, betas, s, rot30, root30, out_json.replace(".rig.json", ".smplx.bin"))
     rig = {"version": 1, "fps": FPS_OUT, "frames": int(len(t_out)), "parents": PARENTS.tolist(), "rest": r4(J * s), "lift": round(lift, 4),
-           "root": r4(root30), "quat": r4(quats), "fingers": r4(fingers), "face": r4(face), "dims": dims}
+           "root": r4(root30), "quat": r4(quats), "fingers": r4(fingers), "face": r4(face), "dims": dims, **rig_extra}
     with open(out_json, "w", encoding="utf-8") as f:
         json.dump(rig, f, separators=(",", ":"))
     return {"frames": rig["frames"]}

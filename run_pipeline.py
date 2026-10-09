@@ -96,14 +96,14 @@ def main():
     hf = os.path.join(out_dir, "hands_face.npz")
     extract(video, kps, hf, os.path.join(comfy, "models", "mediapipe"), fps=fps)
     motion = os.path.join(out_dir, "motion.npz")
-    prepare(npz, hf, os.path.join(comfy, "models", "motion_capture", "body_models", "smpl", "SMPL_NEUTRAL.npz"),
+    prepare(npz, hf, os.path.join(comfy, "models", "motion_capture", "body_models", "smplx", "SMPLX_NEUTRAL.npz"),
             motion, ground=a.ground)
 
     from refine_arms import refine
-    refine(motion, kps, os.path.join(comfy, "models", "motion_capture", "body_models", "smpl", "SMPL_NEUTRAL.npz"))
+    refine(motion, kps, os.path.join(comfy, "models", "motion_capture", "body_models", "smplx", "SMPLX_NEUTRAL.npz"))
     from export_clip import export, export_rig
     export_rig(motion, os.path.join(out_dir, f"{name}.rig.json"),
-               os.path.join(comfy, "models", "motion_capture", "body_models", "smpl", "SMPL_NEUTRAL.npz"))
+               os.path.join(comfy, "models", "motion_capture", "body_models", "smplx", "SMPLX_NEUTRAL.npz"))
     clip = export(motion, os.path.join(out_dir, f"{name}.bin"), os.path.join(out_dir, f"{name}.w2m.bin"))
     print(f"[pipeline] site clip: {name}.bin + {name}.w2m.bin ({clip['frames']} frames @ 30 fps)")
     if not (a.mp4 or a.glb):

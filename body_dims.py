@@ -10,16 +10,23 @@ import numpy as np
 SEGMENTS = [("thigh_l", 1, 4), ("thigh_r", 2, 5), ("shin_l", 4, 7), ("shin_r", 5, 8),
             ("upperarm_l", 16, 18), ("upperarm_r", 17, 19), ("forearm_l", 18, 20), ("forearm_r", 19, 21),
             ("neck", 12, 15), ("collar_l", 13, 16), ("collar_r", 14, 17)]
-NOSE_VERTEX = 332  # SMPL nose tip
 
 
 def smpl_body(model_path, betas):
+    """Rest vertices, joints and the joint that owns each vertex, for SMPL (24 joints) or SMPL-X (55)."""
     m = np.load(model_path, allow_pickle=True)
     nb = len(betas)
     v = m["v_template"] + np.einsum("vci,i->vc", m["shapedirs"][:, :, :nb], betas)
     jr = m["J_regressor"]
     jr = jr.toarray() if hasattr(jr, "toarray") else jr
     return v, jr @ v, m["weights"].argmax(1)
+
+
+def groups(nj):
+    """Joint sets owning the head and each hand, for SMPL (24 joints) or SMPL-X (55: jaw, eyes, 15 per hand)."""
+    if nj >= 55:
+        return {"head": [15, 22, 23, 24], "hand_l": [20, *range(25, 40)], "hand_r": [21, *range(40, 55)], "mid_l": 28}
+    return {"head": [15], "hand_l": [20, 22], "hand_r": [21, 23], "mid_l": 22}
 
 
 def betas_from_joints(model_path, rest_joints, nb=10):
@@ -50,6 +57,7 @@ def _tube(v, J, a, b):
 
 def measure(model_path, betas):
     v, J, owner = smpl_body(model_path, betas)
+    gr = groups(len(J))
     out = {"segments": {}}
     for name, a, b in SEGMENTS:
         out["segments"][name] = _tube(v[owner == a], J, a, b)
@@ -70,21 +78,22 @@ def measure(model_path, betas):
     out["torso"] = prof  # [y, half-width, front z, back z]
 
     # head: ellipsoid around the head vertices, plus where the nose / eyes / mouth sit
-    hv = v[owner == 15]
+    hv = v[np.isin(owner, gr["head"])]
     lo, hi = np.percentile(hv, 1, axis=0), np.percentile(hv, 99, axis=0)
     c = (lo + hi) / 2
-    nose = v[NOSE_VERTEX]
+    mid = hv[(np.abs(hv[:, 0] - c[0]) < 0.012) & (hv[:, 1] < hi[1] - 0.06)]
+    nose = mid[mid[:, 2].argmax()]  # front-most point on the face's midline
     out["head"] = {"center": (c - J[15]).tolist(), "radii": ((hi - lo) / 2).tolist(),
                    "nose": (nose - J[15]).tolist(), "eyes_y": float(nose[1] + 0.035 - J[15, 1]),
                    "mouth_y": float(nose[1] - 0.04 - J[15, 1])}
 
     # hands (left, mirrored for the right): length along the forearm direction, width, thickness
-    hv = v[np.isin(owner, [20, 22])]
+    hv = v[np.isin(owner, gr["hand_l"])]
     d = J[20] - J[18]
     d[1] = 0
     d /= np.linalg.norm(d)
     along = (hv - J[20]) @ d
-    out["hand"] = {"length": float(np.percentile(along, 99.5)), "palm": float(np.linalg.norm(J[22] - J[20]) * 1.05),
+    out["hand"] = {"length": float(np.percentile(along, 99.5)), "palm": float(np.linalg.norm(J[gr["mid_l"]] - J[20]) * (1.0 if len(J) >= 55 else 1.05)),
                    "width": float(np.ptp(np.percentile(hv[:, 2], [3, 97]))),
                    "thickness": float(np.ptp(np.percentile(hv[:, 1], [3, 97])))}
 

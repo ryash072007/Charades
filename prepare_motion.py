@@ -1,7 +1,7 @@
 """SMPL forward kinematics on GVHMR output -> Blender-ready motion file.
 
 Output npz (all in SMPL coordinates: Y up, character faces +Z):
-    rest_joints   (22, 3)       SMPL rest joints for the clip's betas
+    rest_joints   (22, 3)       rest joints for the clip's betas (SMPL-X: the model GVHMR fits)
     parents       (22,)
     local_rot     (T, 22, 3, 3) per-joint local rotations (joint 0 includes facing yaw)
     root_pos      (T, 3)        pelvis joint position (centred, feet grounded)
@@ -50,6 +50,24 @@ def _smooth(x, k=5):
     return np.convolve(xp, np.ones(k) / k, mode="valid")
 
 
+def ground_root(J, local, root, ground="per_frame"):
+    """Shift the root vertically so the lowest foot surface touches y = 0 (every frame, or once for the clip)."""
+    root = root.copy()
+    G, P = fk(J, local, root)
+    toe_tip = P[:, [10, 11]] + np.einsum("tkij,j->tki", G[:, [10, 11]], [0, 0, 0.035])
+    low = np.minimum.reduce([
+        P[:, 7, 1] - ANKLE_RADIUS, P[:, 8, 1] - ANKLE_RADIUS,
+        P[:, 10, 1] - TOE_RADIUS, P[:, 11, 1] - TOE_RADIUS,
+        toe_tip[:, 0, 1] - TOE_RADIUS + 0.005, toe_tip[:, 1, 1] - TOE_RADIUS + 0.005,
+    ])
+    if ground == "per_frame":
+        offset = _smooth(low)          # keeps at least one foot planted every frame
+    else:
+        offset = np.full(len(root), np.percentile(low, 5))
+    root[:, 1] -= offset
+    return root
+
+
 def prepare(gvhmr_npz, hands_face_npz, smpl_model_path, out_path, ground="per_frame", face_camera=True):
     d = np.load(gvhmr_npz)
     T = len(d["body_pose"])
@@ -72,23 +90,12 @@ def prepare(gvhmr_npz, hands_face_npz, smpl_model_path, out_path, ground="per_fr
     # Centre horizontally on the clip's mean pelvis position.
     root[:, [0, 2]] -= root[:, [0, 2]].mean(0)
 
-    # Ground: lowest foot surface touches y = 0.
-    G, P = fk(J, local, root)
-    toe_tip = P[:, [10, 11]] + np.einsum("tkij,j->tki", G[:, [10, 11]], [0, 0, 0.035])
-    low = np.minimum.reduce([
-        P[:, 7, 1] - ANKLE_RADIUS, P[:, 8, 1] - ANKLE_RADIUS,
-        P[:, 10, 1] - TOE_RADIUS, P[:, 11, 1] - TOE_RADIUS,
-        toe_tip[:, 0, 1] - TOE_RADIUS + 0.005, toe_tip[:, 1, 1] - TOE_RADIUS + 0.005,
-    ])
-    if ground == "per_frame":
-        offset = _smooth(low)          # keeps at least one foot planted every frame
-    else:
-        offset = np.full(T, np.percentile(low, 5))
-    root[:, 1] -= offset
+    root = ground_root(J, local, root, ground)
     G, P = fk(J, local, root)
 
     hf = np.load(hands_face_npz)
     np.savez(out_path, rest_joints=J.astype(np.float32), parents=PARENTS, local_rot=local.astype(np.float32), betas=betas,
+             model=np.array("smplx" if "smplx" in smpl_model_path.lower() else "smpl"),
              root_pos=root.astype(np.float32), joints=P.astype(np.float32),
              finger_angles=hf["finger_angles"][:T], hand_valid=hf["hand_valid"][:T],
              face=hf["face"][:T], face_channels=hf["face_channels"], fps=float(hf["fps"]))

@@ -49,7 +49,9 @@ class Worker:
         self.a = a
         self.server = a.server
         self.comfy_root = os.path.join(a.portable_root, "ComfyUI")
-        self.smpl = os.path.join(self.comfy_root, "models", "motion_capture", "body_models", "smpl", "SMPL_NEUTRAL.npz")
+        # GVHMR fits SMPL-X, so its betas/pose belong to SMPL-X; SMPL is only needed to migrate older clips
+        self.smpl = os.path.join(self.comfy_root, "models", "motion_capture", "body_models", "smplx", "SMPLX_NEUTRAL.npz")
+        self.smpl_old = os.path.join(self.comfy_root, "models", "motion_capture", "body_models", "smpl", "SMPL_NEUTRAL.npz")
         self.mp_models = os.path.join(self.comfy_root, "models", "mediapipe")
         os.makedirs(a.clips_dir, exist_ok=True)
         os.makedirs(a.cache_dir, exist_ok=True)
@@ -62,27 +64,43 @@ class Worker:
         threading.Thread(target=self._backfill_rigs, daemon=True).start()
 
     def _backfill_rigs(self):
-        """Upgrade clips made by older pipeline versions from their saved motion.npz (CPU, ~1 s each): arms refined
-        against the video's 2D keypoints (original kept as motion_unrefined.npz), clip files re-exported, rig added."""
+        """Bring clips made by older pipeline versions up to date from their saved motion files (CPU, ~2 s each):
+        SMPL-X skeleton (GVHMR's own model; older clips used SMPL), re-grounded, arms refined against the video's 2D
+        keypoints, clip + rig + exact-fit mesh re-exported. The first original is kept as motion_unrefined.npz."""
         import shutil
         import numpy as np
+        from body_dims import betas_from_joints
+        from prepare_motion import fk, ground_root, rest_joints
         for f in os.listdir(self.a.cache_dir):
             try:
                 r = json.load(open(os.path.join(self.a.cache_dir, f), encoding="utf-8"))
                 cid = r["id"]
                 job = os.path.join(self.comfy_root, "output", "w2m", cid)
                 motion, kps = os.path.join(job, "motion.npz"), os.path.join(job, "kps_00001.json")
+                base = os.path.join(job, "motion_unrefined.npz")
                 rig = os.path.join(self.a.clips_dir, f"{cid}.rig.json")
-                if not os.path.isfile(motion):
+                if not os.path.isfile(motion) or not os.path.isfile(kps):
                     continue
-                refined = "refined" in np.load(motion).files
-                if not refined and os.path.isfile(kps):
-                    shutil.copy(motion, os.path.join(job, "motion_unrefined.npz"))
-                    refine(motion, kps, self.smpl, verbose=False)
-                    export(motion, os.path.join(self.a.clips_dir, f"{cid}.bin"), os.path.join(self.a.clips_dir, f"{cid}.w2m.bin"))
-                if not refined or not os.path.isfile(rig):
-                    export_rig(motion, rig, self.smpl)
-                    print(f"[worker] upgraded {cid} (arms refined, rig written)", flush=True)
+                d = dict(np.load(motion))
+                current = str(d.get("model", "smpl")) == "smplx" and "refined" in d                     and os.path.isfile(rig) and os.path.isfile(os.path.join(self.a.clips_dir, f"{cid}.smplx.bin"))
+                if current:
+                    continue
+                if not os.path.isfile(base):
+                    shutil.copy(motion, base)
+                d = dict(np.load(base))  # start from GVHMR's arms, not an earlier refinement
+                if str(d.get("model", "smpl")) != "smplx":
+                    betas = d["betas"] if "betas" in d else betas_from_joints(self.smpl_old, d["rest_joints"].astype(np.float64))
+                    J = rest_joints(self.smpl, betas)
+                    local = d["local_rot"].astype(np.float64)
+                    root = ground_root(J, local, d["root_pos"].astype(np.float64))
+                    d.update(rest_joints=J.astype(np.float32), betas=betas, root_pos=root.astype(np.float32),
+                             joints=fk(J, local, root)[1].astype(np.float32), model=np.array("smplx"))
+                d.pop("refined", None)
+                np.savez(motion, **d)
+                refine(motion, kps, self.smpl, verbose=False)
+                export(motion, os.path.join(self.a.clips_dir, f"{cid}.bin"), os.path.join(self.a.clips_dir, f"{cid}.w2m.bin"))
+                export_rig(motion, rig, self.smpl)
+                print(f"[worker] upgraded {cid} (SMPL-X skeleton, arms refined, rig + exact-fit mesh)", flush=True)
             except Exception as e:
                 print(f"[worker] upgrade {f}: {e}", flush=True)
 
