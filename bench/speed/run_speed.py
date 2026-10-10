@@ -73,6 +73,16 @@ def compiled(wf):
     return wf
 
 
+def w2m_compiled(wf, mode="default", attention="default", compile=True):
+    """torch.compile per block via comfyui-w2m W2MCompileWan: NVFP4 Linears and attention stay eager behind custom ops,
+    so it works with dynamic VRAM and every block is one graph."""
+    for src, dst in (("5", "62"), ("6", "63")):
+        wf[dst] = node("W2MCompileWan", model=[src, 0], mode=mode, fullgraph=True, compile=compile, attention=attention)
+    wf["12"]["inputs"]["model"] = ["62", 0]
+    wf["13"]["inputs"]["model"] = ["63", 0]
+    return wf
+
+
 def sage(wf, mode):
     """KJNodes sage attention patch on both experts (overrides the global --use-sage-attention kernel choice)."""
     for src, dst in (("5", "70"), ("6", "71")):
@@ -100,6 +110,12 @@ def lowres_lanczos(wf, w=384, h=672):
     return wf
 
 
+def render_res(wf, w, h):
+    """Sample and output at w x h (no resize)."""
+    wf["11"]["inputs"]["width"], wf["11"]["inputs"]["height"] = w, h
+    return wf
+
+
 def sharpen(wf):
     """A light unsharp mask after the resize, to bring back line crispness."""
     src = wf["15"]["inputs"]["images"]
@@ -109,6 +125,15 @@ def sharpen(wf):
 
 
 VARIANTS = {
+    "nvfp4_384_sharp_w2mc": lambda p: w2m_compiled(sharpen(lowres_lanczos(cached_i2v(tae(nvfp4(baseline(p))))))),
+    "nvfp4_384_sharp_sage3": lambda p: w2m_compiled(sharpen(lowres_lanczos(cached_i2v(tae(nvfp4(baseline(p)))))), attention="sage3", compile=False),
+    "nvfp4_384_sharp_sage3pbm": lambda p: w2m_compiled(sharpen(lowres_lanczos(cached_i2v(tae(nvfp4(baseline(p)))))), attention="sage3_per_block_mean", compile=False),
+    "nvfp4_384_sharp_w2mc_sage3": lambda p: w2m_compiled(sharpen(lowres_lanczos(cached_i2v(tae(nvfp4(baseline(p)))))), attention="sage3"),
+    "nvfp4_384_sharp_w2mc_sage3pbm": lambda p: w2m_compiled(sharpen(lowres_lanczos(cached_i2v(tae(nvfp4(baseline(p)))))), attention="sage3_per_block_mean"),
+    "nvfp4_480_w2mc": lambda p: w2m_compiled(cached_i2v(tae(nvfp4(baseline(p))))),
+    "nvfp4_576_w2mc": lambda p: w2m_compiled(render_res(cached_i2v(tae(nvfp4(baseline(p)))), 576, 1024)),
+    "nvfp4_384_sharp_w2mc_at": lambda p: w2m_compiled(sharpen(lowres_lanczos(cached_i2v(tae(nvfp4(baseline(p)))))), "max-autotune-no-cudagraphs"),
+    "nvfp4_384_sharp_compile": lambda p: compiled(sharpen(lowres_lanczos(cached_i2v(tae(nvfp4(baseline(p))))))),
     "nvfp4_384_sharp": lambda p: sharpen(lowres_lanczos(cached_i2v(tae(nvfp4(baseline(p)))))),
     "nvfp4_320_sharp": lambda p: sharpen(lowres_lanczos(cached_i2v(tae(nvfp4(baseline(p)))), 320, 560)),
     "nvfp4_lowres_lanczos": lambda p: lowres_lanczos(cached_i2v(tae(nvfp4(baseline(p))))),
@@ -127,7 +152,7 @@ VARIANTS = {
 
 async def _run(wf):
     cid = uuid.uuid4().hex
-    times, cur, ct = {}, None, None
+    times, cur, ct, steps = {}, None, None, []
     async with aiohttp.ClientSession() as s:
         async with s.ws_connect(f"ws://{SERVER}/ws?clientId={cid}", max_msg_size=0) as ws:
             r = urllib.request.Request(f"http://{SERVER}/prompt", data=json.dumps({"prompt": wf, "client_id": cid}).encode(),
@@ -148,8 +173,12 @@ async def _run(wf):
                     cur, ct = d.get("node"), now
                     if cur is None:
                         break
+                elif m["type"] == "progress":
+                    steps.append((d.get("node"), d.get("value"), round(time.time() - ct, 2)))
                 elif m["type"] == "execution_error":
                     raise RuntimeError(f"{d.get('node_type')}: {d.get('exception_message', '')[:500]}")
+    if os.environ.get("W2M_STEPS"):
+        print("[steps] (node, step, s since node start)", steps, flush=True)
     return pid, times, time.time() - t0
 
 
@@ -178,7 +207,7 @@ def run(variant, phrase, warm=True):
         if new:
             w.writerow(["when", "variant", "phrase", "total_s", "breakdown"])
         w.writerow([time.strftime("%Y-%m-%d %H:%M"), variant, phrase, f"{total:.1f}", json.dumps(parts)])
-    print(f"[speed] {variant:14s} {phrase:12s} {total:6.1f}s  {parts}", flush=True)
+    print(f"[speed] {variant:14s} {phrase:12s} {total:6.1f}s  {parts}  per-node {dict((k, round(v, 1)) for k, v in times.items())}", flush=True)
 
 
 if __name__ == "__main__":

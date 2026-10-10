@@ -15,6 +15,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 FAST_WORKFLOW = os.path.join(HERE, "wanphrase2motion_fast.json")
 DEFAULT_COMFY = r"C:\Users\ryash\OneDrive\Documents\AI\ComfyUI_windows_portable"
 COMFY_ARGS = ["--fast", "fp16_accumulation", "--enable-manager", "--use-sage-attention"]
+COMFY_ARGS += os.environ.get("W2M_COMFY_EXTRA_ARGS", "").split()  # e.g. "--disable-dynamic-vram" for torch.compile
 
 PROMPT_NODE, VACE_NODE, SAMPLER_NODE, DECODE_NODE = "91", "101", "117", "103"
 RGB_NODE, KPS_NODE, NPZ_NODE, TINY_VAE_NODE, FULL_VAE_NODE = "200", "201", "202", "302", "97"

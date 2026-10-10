@@ -4,12 +4,20 @@ W2MPoseKpsToBBoxMask      DWPose keypoints -> white-box-on-black frames. GVHMR o
                           from its mask video, so this replaces a ~20 s SAM3 pass.
 W2MWanVaceToVideoCached   WanVaceToVideo without control video / masks / reference image, with the
                           (constant) grey control-video latent cached per VAE + size + length.
+W2MWanImageToVideoCached  WanImageToVideo (start image only) with the encoded start-image video cached.
+W2MCompileWan             torch.compile on each Wan transformer block, with the weight-casting ops (NVFP4 Linears,
+                          dynamic-VRAM streaming) and the attention kernel hidden behind opaque custom ops so
+                          every block traces as one graph and inductor fuses the glue between them.
 """
+import logging
+import os
+
 import numpy as np
 import torch
 
 import comfy.latent_formats
 import comfy.model_management
+import comfy.ops
 import node_helpers
 
 
@@ -165,12 +173,203 @@ class W2MWanImageToVideoCached:
         return (positive, negative, {"samples": latent})
 
 
+# ComfyUI caps pinned RAM at 40% on Windows. The two Wan 2.2 A14B NVFP4 experts are 16.8 GB and only one fits in 16 GB
+# of VRAM, so both stream in for every clip; whatever isn't pinned streams from pageable memory several times slower.
+if os.environ.get("W2M_PIN_FRACTION") and comfy.model_management.MAX_PINNED_MEMORY > 0:
+    comfy.model_management.MAX_PINNED_MEMORY = (comfy.model_management.get_total_memory(torch.device("cpu"))
+                                                * float(os.environ["W2M_PIN_FRACTION"]))
+    logging.info("W2M: pinned memory cap %d MB", comfy.model_management.MAX_PINNED_MEMORY // (1024 * 1024))
+
+
+# Opaque ops for W2MCompileWan. Dynamo can't trace comfy-kitchen's quantized tensors, ComfyUI's dynamic-VRAM weight
+# streaming (uint8 buffers reinterpreted as other dtypes) or SageAttention's pybind kernels, so each one runs eagerly
+# inside a custom op and the compiled graph only sees "tensor in, tensor out".
+_W2M_MODULES = []
+
+
+@torch.library.custom_op("w2m::module", mutates_args=())
+def _w2m_module(x: torch.Tensor, idx: int) -> torch.Tensor:
+    y = _W2M_MODULES[idx]._w2m_eager_forward(x)
+    return y if y.dtype == x.dtype else y.to(x.dtype)
+
+
+@_w2m_module.register_fake
+def _(x, idx):
+    m = _W2M_MODULES[idx]
+    return x.new_empty((*x.shape[:-1], m.out_features) if hasattr(m, "out_features") else x.shape)
+
+
+_W2M_ATTN = {}
+
+
+def _w2m_sage3(q, k, v, heads, per_block_mean):
+    """SageAttention3 (FP4 attention on Blackwell) on Wan's (B, L, heads*dim) tensors."""
+    from sageattn3 import sageattn3_blackwell
+    b, d = q.shape[0], q.shape[-1] // heads
+    q, k, v = (t.view(b, -1, heads, d).transpose(1, 2) for t in (q, k, v))
+    out = sageattn3_blackwell(q, k, v, is_causal=False, per_block_mean=per_block_mean)
+    return out.transpose(1, 2).reshape(b, -1, heads * d)
+
+
+def _w2m_attn_eager(q, k, v, heads, kind):
+    if kind == "default":
+        return _W2M_ATTN["fn"](q, k, v, heads=heads)
+    return _w2m_sage3(q, k, v, heads, per_block_mean=(kind == "sage3_per_block_mean"))
+
+
+@torch.library.custom_op("w2m::sage3_core", mutates_args=())
+def _w2m_sage3_core(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, delta_s: torch.Tensor, kl: int,
+                    per_block_mean: bool) -> torch.Tensor:
+    """SageAttention3's FP4 quantization + attention kernel on already centred, 128-padded (B, H, L, D) tensors."""
+    from sageattn3.api import (scale_and_quant_fp4, scale_and_quant_fp4_permute, scale_and_quant_fp4_transpose,
+                               blockscaled_fp4_attn)
+    q, k, v, delta_s = (t.contiguous() for t in (q, k, v, delta_s))
+    return blockscaled_fp4_attn(scale_and_quant_fp4(q), scale_and_quant_fp4_permute(k), scale_and_quant_fp4_transpose(v),
+                                delta_s, kl, False, per_block_mean, q.dtype == torch.bfloat16)[0]
+
+
+@_w2m_sage3_core.register_fake
+def _(q, k, v, delta_s, kl, per_block_mean):
+    return torch.empty_like(q)
+
+
+def _w2m_sage3_traced(q, k, v, heads, per_block_mean):
+    """SageAttention3 with its preprocessing (k / q mean removal, pad to 128, layout) written as plain tensor ops, so
+    inductor fuses it with the surrounding RoPE / norm instead of running it as separate eager kernels. Same maths as
+    sageattn3.api.preprocess_qkv, minus its in-place k -= mean."""
+    b, d = q.shape[0], q.shape[-1] // heads
+    q, k, v = (t.view(b, -1, heads, d).transpose(1, 2) for t in (q, k, v))
+    L = q.shape[2]
+    pad = (128 - L % 128) % 128
+    k = k - k.mean(dim=-2, keepdim=True)
+    q, k, v = (torch.nn.functional.pad(t, (0, 0, 0, pad)) for t in (q, k, v))
+    if per_block_mean:
+        g = q.view(b, heads, -1, 128, d)
+        qm = g.mean(dim=-2)
+        q = (g - qm.unsqueeze(-2)).view(b, heads, -1, d)
+    else:
+        qm = q.mean(dim=-2, keepdim=True)
+        q = q - qm
+    delta_s = torch.matmul(qm, k.transpose(-2, -1)).float()
+    out = torch.ops.w2m.sage3_core(q, k, v, delta_s, L, per_block_mean)[:, :, :L]
+    return out.transpose(1, 2).reshape(b, -1, heads * d)
+
+
+@torch.library.custom_op("w2m::attn", mutates_args=())
+def _w2m_attn(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, heads: int, kind: str) -> torch.Tensor:
+    return _w2m_attn_eager(q, k, v, heads, kind)
+
+
+@_w2m_attn.register_fake
+def _(q, k, v, heads, kind):
+    return q.new_empty((q.shape[0], q.shape[1], v.shape[-1]))
+
+
+def _w2m_patch_wan_attention():
+    """Route Wan's attention through w2m::attn. The kernel choice rides in transformer_options["w2m_attention"], set
+    only on models patched by W2MCompileWan; everything else keeps ComfyUI's own attention."""
+    import comfy.ldm.wan.model as wan
+    if "fn" in _W2M_ATTN:
+        return
+    orig = _W2M_ATTN["fn"] = wan.optimized_attention
+
+    def attn(q, k, v, heads, mask=None, transformer_options={}, **kw):
+        kind = transformer_options.get("w2m_attention")
+        if kind is not None and mask is None and not kw:
+            if torch.compiler.is_compiling():
+                # sage3 only for video self-attention; text cross-attention (512 keys) is tiny, stays on the default
+                if kind != "default" and q.shape[1] > 1024 and k.shape[1] > 1024:
+                    return _w2m_sage3_traced(q, k, v, heads, per_block_mean=(kind == "sage3_per_block_mean"))
+                return torch.ops.w2m.attn(q, k, v, heads, kind)
+            if kind != "default":
+                return _w2m_attn_eager(q, k, v, heads, kind)
+        return orig(q, k, v, heads, mask=mask, transformer_options=transformer_options, **kw)
+    wan.optimized_attention = attn
+
+
+def _w2m_patch_module(m):
+    if hasattr(m, "_w2m_eager_forward"):
+        return
+    m._w2m_eager_forward = m.forward
+    idx = len(_W2M_MODULES)
+    _W2M_MODULES.append(m)
+
+    def forward(x):
+        if torch.compiler.is_compiling():
+            return torch.ops.w2m.module(x, idx)
+        return m._w2m_eager_forward(x)
+    m.forward = forward
+
+
+def _w2m_raise_recompile_limits():
+    # all blocks share one forward code object and each is its own graph (it bakes in its modules' ids), x2 experts,
+    # x every resolution / length used in this session
+    for k in ("recompile_limit", "accumulated_recompile_limit"):
+        if hasattr(torch._dynamo.config, k):
+            setattr(torch._dynamo.config, k, max(getattr(torch._dynamo.config, k), 1024))
+
+
+def _w2m_limits_wrapper(executor, *args, **kwargs):
+    _w2m_raise_recompile_limits()  # torch config overrides are thread-local; this runs on the sampling thread
+    return executor(*args, **kwargs)
+
+
+class W2MCompileWan:
+    """torch.compile (inductor) per Wan transformer block. Needs Triton and a C compiler (MSVC on Windows). The first
+    clip at a new resolution / length compiles (a few minutes); later clips reuse the kernels."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {
+            "model": ("MODEL",),
+            "mode": (["default", "max-autotune-no-cudagraphs"], {"default": "default"}),
+            "fullgraph": ("BOOLEAN", {"default": True}),
+            "compile": ("BOOLEAN", {"default": True}),
+            "attention": (["default", "sage3", "sage3_per_block_mean"], {"default": "default",
+                          "tooltip": "default = the global attention (--use-sage-attention); sage3 = SageAttention3 FP4"}),
+        }}
+
+    RETURN_TYPES = ("MODEL",)
+    FUNCTION = "patch"
+    CATEGORY = "W2M"
+
+    def patch(self, model, mode, fullgraph, compile=True, attention="default"):
+        from comfy_api.torch_helpers import set_torch_compile_wrapper
+        m = model.clone()
+        dm = m.get_model_object("diffusion_model")
+        _w2m_patch_wan_attention()
+        to = m.model_options["transformer_options"] = dict(m.model_options.get("transformer_options", {}))
+        to["w2m_attention"] = attention
+        if not compile:
+            return (m,)
+        for block in dm.blocks:
+            for mod in block.modules():
+                # every comfy op that casts / streams a weight: Linears (incl. the mixed-precision NVFP4 one, a plain
+                # nn.Module) and affine norms. Weightless norms stay in the graph and fuse with the modulation.
+                if isinstance(mod, comfy.ops.CastWeightBiasOp) and getattr(mod, "weight", None) is not None:
+                    _w2m_patch_module(mod)
+        from comfy.patcher_extension import WrappersMP
+        m.add_wrapper_with_key(WrappersMP.APPLY_MODEL, "w2m_recompile_limits", _w2m_limits_wrapper)
+        torch._dynamo.config.force_parameter_static_shapes = True
+        # transformer_options carries per-step values (sigmas etc.); guarding on it would recompile every step. Keep
+        # only the guard on the attention choice, which is baked into the graph.
+        keep = lambda entries: ["transformer_options" not in e.name or "w2m_attention" in e.name for e in entries]
+        options = {"guard_filter_fn": keep}
+        if mode != "default":  # torch.compile takes mode or options, not both
+            options.update(torch._inductor.list_mode_options(mode))
+        set_torch_compile_wrapper(model=m, keys=[f"diffusion_model.blocks.{i}" for i in range(len(dm.blocks))],
+                                  backend="inductor", fullgraph=fullgraph, dynamic=False, options=options)
+        return (m,)
+
+
 NODE_CLASS_MAPPINGS = {
+    "W2MCompileWan": W2MCompileWan,
     "W2MPoseKpsToBBoxMask": W2MPoseKpsToBBoxMask,
     "W2MWanVaceToVideoCached": W2MWanVaceToVideoCached,
     "W2MWanImageToVideoCached": W2MWanImageToVideoCached,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
+    "W2MCompileWan": "Compile Wan blocks, opaque quant/attention (W2M)",
     "W2MPoseKpsToBBoxMask": "Pose Keypoints to BBox Mask (W2M)",
     "W2MWanVaceToVideoCached": "WanVaceToVideo, cached blank control (W2M)",
     "W2MWanImageToVideoCached": "WanImageToVideo, cached start-image encode (W2M)",
