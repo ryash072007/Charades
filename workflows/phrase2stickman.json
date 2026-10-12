@@ -1,0 +1,1018 @@
+{
+ "last_node_id": 20,
+ "last_link_id": 23,
+ "nodes": [
+  {
+   "id": 1,
+   "type": "UNETLoader",
+   "pos": [
+    60,
+    60
+   ],
+   "size": [
+    330,
+    116
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "MODEL",
+     "type": "MODEL",
+     "links": [
+      2
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "UNETLoader"
+   },
+   "widgets_values": [
+    "Wan2.2-I2V-A14B_NVFP4_Sparse_high_comfy.safetensors",
+    "default"
+   ],
+   "title": "High-noise expert (NVFP4)"
+  },
+  {
+   "id": 2,
+   "type": "UNETLoader",
+   "pos": [
+    60,
+    216
+   ],
+   "size": [
+    330,
+    116
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "MODEL",
+     "type": "MODEL",
+     "links": [
+      3
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "UNETLoader"
+   },
+   "widgets_values": [
+    "Wan2.2-I2V-A14B_NVFP4_Sparse_low_comfy.safetensors",
+    "default"
+   ],
+   "title": "Low-noise expert (NVFP4)"
+  },
+  {
+   "id": 3,
+   "type": "VAELoader",
+   "pos": [
+    60,
+    372
+   ],
+   "size": [
+    330,
+    88
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "VAE",
+     "type": "VAE",
+     "links": [
+      19
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "VAELoader"
+   },
+   "widgets_values": [
+    "lighttaew2_1.safetensors"
+   ],
+   "title": "Tiny VAE (fast decode)"
+  },
+  {
+   "id": 4,
+   "type": "CLIPLoader",
+   "pos": [
+    60,
+    500
+   ],
+   "size": [
+    330,
+    144
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "CLIP",
+     "type": "CLIP",
+     "links": [
+      1,
+      4
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "CLIPLoader"
+   },
+   "widgets_values": [
+    "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+    "wan",
+    "default"
+   ]
+  },
+  {
+   "id": 5,
+   "type": "VAELoader",
+   "pos": [
+    60,
+    684
+   ],
+   "size": [
+    330,
+    88
+   ],
+   "flags": {},
+   "order": 4,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "VAE",
+     "type": "VAE",
+     "links": [
+      8
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "VAELoader"
+   },
+   "widgets_values": [
+    "wan_2.1_vae.safetensors"
+   ]
+  },
+  {
+   "id": 6,
+   "type": "LoadImage",
+   "pos": [
+    60,
+    812
+   ],
+   "size": [
+    330,
+    380
+   ],
+   "flags": {},
+   "order": 5,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      5
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "links": null,
+     "slot_index": 1
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "LoadImage"
+   },
+   "widgets_values": [
+    "relaxed_stickman_appendages.jpg",
+    "image"
+   ],
+   "title": "Reference stickman"
+  },
+  {
+   "id": 7,
+   "type": "CLIPTextEncode",
+   "pos": [
+    460,
+    60
+   ],
+   "size": [
+    420,
+    260
+   ],
+   "flags": {},
+   "order": 6,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "clip",
+     "type": "CLIP",
+     "link": 1
+    }
+   ],
+   "outputs": [
+    {
+     "name": "CONDITIONING",
+     "type": "CONDITIONING",
+     "links": [
+      7
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "CLIPTextEncode"
+   },
+   "widgets_values": [
+    "photo, realistic, 3D render, real person, human skin, shading, gradient background, scenery, text, watermark, extra limbs, extra arms, extra hands, missing limbs, deformed, blurry, morphing, flicker, cropped, out of frame"
+   ],
+   "title": "Negative (unused at CFG 1)"
+  },
+  {
+   "id": 8,
+   "type": "ModelSamplingSD3",
+   "pos": [
+    460,
+    360
+   ],
+   "size": [
+    330,
+    88
+   ],
+   "flags": {},
+   "order": 7,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "model",
+     "type": "MODEL",
+     "link": 2
+    }
+   ],
+   "outputs": [
+    {
+     "name": "MODEL",
+     "type": "MODEL",
+     "links": [
+      10
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "ModelSamplingSD3"
+   },
+   "widgets_values": [
+    5.0
+   ]
+  },
+  {
+   "id": 9,
+   "type": "ModelSamplingSD3",
+   "pos": [
+    460,
+    488
+   ],
+   "size": [
+    330,
+    88
+   ],
+   "flags": {},
+   "order": 8,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "model",
+     "type": "MODEL",
+     "link": 3
+    }
+   ],
+   "outputs": [
+    {
+     "name": "MODEL",
+     "type": "MODEL",
+     "links": [
+      14
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "ModelSamplingSD3"
+   },
+   "widgets_values": [
+    5.0
+   ]
+  },
+  {
+   "id": 10,
+   "type": "CLIPTextEncode",
+   "pos": [
+    460,
+    616
+   ],
+   "size": [
+    420,
+    260
+   ],
+   "flags": {},
+   "order": 9,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "clip",
+     "type": "CLIP",
+     "link": 4
+    }
+   ],
+   "outputs": [
+    {
+     "name": "CONDITIONING",
+     "type": "CONDITIONING",
+     "links": [
+      6
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "CLIPTextEncode"
+   },
+   "widgets_values": [
+    "2D cartoon stick figure animation on a plain white background, flat hand-drawn style, static camera. A simple stickman with a round white head with dot eyes and a small smile, spiky teal hair, thick rounded blue outline limbs, a white rectangular torso outlined in blue, teal shorts, standing in the center facing the viewer, whole body visible from head to feet. The stickman has round blue hands with five short fingers, small round ears on both sides of the head and a small button nose. The stickman holds one fist out in front of the chest with the thumb pointing straight up, nods once, then holds the sign still."
+   ],
+   "title": "Prompt: style + mime",
+   "color": "#232",
+   "bgcolor": "#353"
+  },
+  {
+   "id": 11,
+   "type": "ImageScale",
+   "pos": [
+    460,
+    916
+   ],
+   "size": [
+    330,
+    172
+   ],
+   "flags": {},
+   "order": 10,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "image",
+     "type": "IMAGE",
+     "link": 5
+    }
+   ],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      9
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "ImageScale"
+   },
+   "widgets_values": [
+    "lanczos",
+    480,
+    832,
+    "center"
+   ],
+   "title": "Reference to 480x832"
+  },
+  {
+   "id": 12,
+   "type": "W2MWanImageToVideoCached",
+   "pos": [
+    860,
+    60
+   ],
+   "size": [
+    330,
+    172
+   ],
+   "flags": {},
+   "order": 11,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "positive",
+     "type": "CONDITIONING",
+     "link": 6
+    },
+    {
+     "name": "negative",
+     "type": "CONDITIONING",
+     "link": 7
+    },
+    {
+     "name": "vae",
+     "type": "VAE",
+     "link": 8
+    },
+    {
+     "name": "start_image",
+     "type": "IMAGE",
+     "link": 9
+    }
+   ],
+   "outputs": [
+    {
+     "name": "positive",
+     "type": "CONDITIONING",
+     "links": [
+      11,
+      15
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "negative",
+     "type": "CONDITIONING",
+     "links": [
+      12,
+      16
+     ],
+     "slot_index": 1
+    },
+    {
+     "name": "latent",
+     "type": "LATENT",
+     "links": [
+      13
+     ],
+     "slot_index": 2
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "W2MWanImageToVideoCached"
+   },
+   "widgets_values": [
+    384,
+    672,
+    49,
+    1
+   ],
+   "title": "Start image (encode cached)"
+  },
+  {
+   "id": 13,
+   "type": "KSamplerAdvanced",
+   "pos": [
+    1260,
+    60
+   ],
+   "size": [
+    330,
+    340
+   ],
+   "flags": {},
+   "order": 12,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "model",
+     "type": "MODEL",
+     "link": 10
+    },
+    {
+     "name": "positive",
+     "type": "CONDITIONING",
+     "link": 11
+    },
+    {
+     "name": "negative",
+     "type": "CONDITIONING",
+     "link": 12
+    },
+    {
+     "name": "latent_image",
+     "type": "LATENT",
+     "link": 13
+    }
+   ],
+   "outputs": [
+    {
+     "name": "LATENT",
+     "type": "LATENT",
+     "links": [
+      17
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "KSamplerAdvanced"
+   },
+   "widgets_values": [
+    "enable",
+    424242,
+    "fixed",
+    4,
+    1.0,
+    "euler",
+    "simple",
+    0,
+    2,
+    "enable"
+   ],
+   "title": "Sampler: steps 0-2 (high noise)"
+  },
+  {
+   "id": 14,
+   "type": "KSamplerAdvanced",
+   "pos": [
+    1660,
+    60
+   ],
+   "size": [
+    330,
+    340
+   ],
+   "flags": {},
+   "order": 13,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "model",
+     "type": "MODEL",
+     "link": 14
+    },
+    {
+     "name": "positive",
+     "type": "CONDITIONING",
+     "link": 15
+    },
+    {
+     "name": "negative",
+     "type": "CONDITIONING",
+     "link": 16
+    },
+    {
+     "name": "latent_image",
+     "type": "LATENT",
+     "link": 17
+    }
+   ],
+   "outputs": [
+    {
+     "name": "LATENT",
+     "type": "LATENT",
+     "links": [
+      18
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "KSamplerAdvanced"
+   },
+   "widgets_values": [
+    "disable",
+    424242,
+    "fixed",
+    4,
+    1.0,
+    "euler",
+    "simple",
+    2,
+    4,
+    "disable"
+   ],
+   "title": "Sampler: steps 2-4 (low noise)"
+  },
+  {
+   "id": 15,
+   "type": "VAEDecode",
+   "pos": [
+    2060,
+    60
+   ],
+   "size": [
+    330,
+    116
+   ],
+   "flags": {},
+   "order": 14,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "samples",
+     "type": "LATENT",
+     "link": 18
+    },
+    {
+     "name": "vae",
+     "type": "VAE",
+     "link": 19
+    }
+   ],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      20
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "VAEDecode"
+   },
+   "widgets_values": []
+  },
+  {
+   "id": 16,
+   "type": "ImageScale",
+   "pos": [
+    2460,
+    60
+   ],
+   "size": [
+    330,
+    172
+   ],
+   "flags": {},
+   "order": 15,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "image",
+     "type": "IMAGE",
+     "link": 20
+    }
+   ],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      21
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "ImageScale"
+   },
+   "widgets_values": [
+    "lanczos",
+    480,
+    832,
+    "disabled"
+   ],
+   "title": "Lanczos up to 480x832"
+  },
+  {
+   "id": 17,
+   "type": "ImageSharpen",
+   "pos": [
+    2860,
+    60
+   ],
+   "size": [
+    330,
+    144
+   ],
+   "flags": {},
+   "order": 16,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "image",
+     "type": "IMAGE",
+     "link": 21
+    }
+   ],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      22
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "ImageSharpen"
+   },
+   "widgets_values": [
+    1,
+    0.6,
+    0.6
+   ],
+   "title": "Light sharpen"
+  },
+  {
+   "id": 18,
+   "type": "CreateVideo",
+   "pos": [
+    3260,
+    60
+   ],
+   "size": [
+    330,
+    88
+   ],
+   "flags": {},
+   "order": 17,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 22
+    }
+   ],
+   "outputs": [
+    {
+     "name": "VIDEO",
+     "type": "VIDEO",
+     "links": [
+      23
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "CreateVideo"
+   },
+   "widgets_values": [
+    16
+   ]
+  },
+  {
+   "id": 19,
+   "type": "SaveVideo",
+   "pos": [
+    3660,
+    60
+   ],
+   "size": [
+    330,
+    144
+   ],
+   "flags": {},
+   "order": 18,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "video",
+     "type": "VIDEO",
+     "link": 23
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "SaveVideo"
+   },
+   "widgets_values": [
+    "stickman/out",
+    "mp4",
+    "h264"
+   ]
+  },
+  {
+   "id": 20,
+   "type": "Note",
+   "pos": [
+    60,
+    -240
+   ],
+   "size": [
+    760,
+    150
+   ],
+   "flags": {},
+   "order": 19,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "properties": {},
+   "widgets_values": [
+    "Phrase2Stickman. Edit the mime sentence at the end of the Prompt node, then Run.\nNeeds: the comfyui-w2m node, and the models listed in the README (python setup.py installs them).\nSampling at 384x672 and scaling up to 480x832 is deliberate: 320 breaks gestures, 480+ is slower and no better."
+   ],
+   "title": "Read me"
+  }
+ ],
+ "links": [
+  [
+   1,
+   4,
+   0,
+   7,
+   0,
+   "CLIP"
+  ],
+  [
+   2,
+   1,
+   0,
+   8,
+   0,
+   "MODEL"
+  ],
+  [
+   3,
+   2,
+   0,
+   9,
+   0,
+   "MODEL"
+  ],
+  [
+   4,
+   4,
+   0,
+   10,
+   0,
+   "CLIP"
+  ],
+  [
+   5,
+   6,
+   0,
+   11,
+   0,
+   "IMAGE"
+  ],
+  [
+   6,
+   10,
+   0,
+   12,
+   0,
+   "CONDITIONING"
+  ],
+  [
+   7,
+   7,
+   0,
+   12,
+   1,
+   "CONDITIONING"
+  ],
+  [
+   8,
+   5,
+   0,
+   12,
+   2,
+   "VAE"
+  ],
+  [
+   9,
+   11,
+   0,
+   12,
+   3,
+   "IMAGE"
+  ],
+  [
+   10,
+   8,
+   0,
+   13,
+   0,
+   "MODEL"
+  ],
+  [
+   11,
+   12,
+   0,
+   13,
+   1,
+   "CONDITIONING"
+  ],
+  [
+   12,
+   12,
+   1,
+   13,
+   2,
+   "CONDITIONING"
+  ],
+  [
+   13,
+   12,
+   2,
+   13,
+   3,
+   "LATENT"
+  ],
+  [
+   14,
+   9,
+   0,
+   14,
+   0,
+   "MODEL"
+  ],
+  [
+   15,
+   12,
+   0,
+   14,
+   1,
+   "CONDITIONING"
+  ],
+  [
+   16,
+   12,
+   1,
+   14,
+   2,
+   "CONDITIONING"
+  ],
+  [
+   17,
+   13,
+   0,
+   14,
+   3,
+   "LATENT"
+  ],
+  [
+   18,
+   14,
+   0,
+   15,
+   0,
+   "LATENT"
+  ],
+  [
+   19,
+   3,
+   0,
+   15,
+   1,
+   "VAE"
+  ],
+  [
+   20,
+   15,
+   0,
+   16,
+   0,
+   "IMAGE"
+  ],
+  [
+   21,
+   16,
+   0,
+   17,
+   0,
+   "IMAGE"
+  ],
+  [
+   22,
+   17,
+   0,
+   18,
+   0,
+   "IMAGE"
+  ],
+  [
+   23,
+   18,
+   0,
+   19,
+   0,
+   "VIDEO"
+  ]
+ ],
+ "groups": [],
+ "config": {},
+ "extra": {},
+ "version": 0.4
+}

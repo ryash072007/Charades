@@ -50,6 +50,11 @@ python stickman_i2v.py thumbs_up
 python stickman_i2v.py --mime "The stickman waves both hands overhead, then holds still." --name wave
 ```
 
+**In the ComfyUI UI.** Drag [workflows/phrase2stickman.json](workflows/phrase2stickman.json) onto the canvas (after `setup.py`), edit the
+mime sentence at the end of the green Prompt node, and press Run. It is the same graph as `stickman_i2v.py`, but saves with
+ComfyUI's core Create Video + Save Video nodes. `python export_workflow.py` regenerates it (`--compile` adds the compile nodes);
+it needs ComfyUI running.
+
 Clips go to `out/<name>.mp4`. `--seed N` for another take, `--time-twice` to time a warm run, `--compile` for batch runs (below).
 
 ## What we learned
