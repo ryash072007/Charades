@@ -12,9 +12,10 @@ import subprocess
 import sys
 import urllib.request
 
-import comfy_client as cc
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)  # ComfyUI's embedded Python doesn't put the script folder on sys.path
+import comfy_client as cc  # noqa: E402
 HF = "https://huggingface.co"
 # (url, folder under ComfyUI/models, file name, size for the progress line)
 MODELS = [
@@ -62,7 +63,7 @@ def main():
     shutil.copytree(os.path.join(HERE, "comfy_nodes", "comfyui-w2m"), dst, dirs_exist_ok=True)
     print(f"[nodes] comfyui-w2m -> {dst}")
     for name, url in NODES.items():
-        if os.path.isdir(os.path.join(nodes, name)):
+        if any(d.lower() == name.lower() for d in os.listdir(nodes)):  # folder case differs between installs
             print(f"[skip] {name} already installed")
         else:
             subprocess.run(["git", "clone", "--depth", "1", url, os.path.join(nodes, name)], check=True)

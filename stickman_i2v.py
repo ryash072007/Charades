@@ -19,9 +19,10 @@ import shutil
 import sys
 import time
 
-import comfy_client as cc
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)  # ComfyUI's embedded Python doesn't put the script folder on sys.path
+import comfy_client as cc  # noqa: E402
 REF = "relaxed_stickman_appendages.jpg"
 SEED = 424242
 OUT_W, OUT_H = 480, 832      # delivered size
