@@ -1,192 +1,87 @@
-# WANPhrase2Motion: clip → 3D character
+# WANPhrase2Motion: stickman charades clips
 
-This turns one generated charades clip into a soft-vinyl cartoon character that performs the same mime. The output is a 16 fps MP4 and an animated GLB.
+Turns a one-sentence mime ("The stickman holds one fist out in front of the chest with the thumb pointing straight up…")
+into a 3 s, 16 fps clip of the **same stickman** (`refs/relaxed_stickman_appendages.jpg`) acting it out. It is
+**Wan 2.2 A14B image-to-video** in ComfyUI, tuned to about **18 s per clip** on an RTX 5060 Ti 16 GB (it started at 66 s).
 
-```
-phrase ─► Ollama ─► Wan 2.1 VACE clip ─┬─► DWPose keypoints ─┐
-                                        ├─► GVHMR SMPL params ├─► extract_hands_face.py ─► prepare_motion.py ─► Blender ─► MP4 + GLB
-                                        └─► RGB frames ───────┘   (MediaPipe hands/face)     (SMPL FK, grounding)   (EEVEE)
-```
-
-| Part | Source |
-|---|---|
-| Body + root motion | GVHMR `smpl_params_*.npz`, SMPL forward kinematics with the clip's betas |
-| Fingers | MediaPipe HandLandmarker on crops around each DWPose wrist (3D world landmarks). Falls back to DWPose 2D hand keypoints, then gap interpolation. Converted to curl/spread angles per joint |
-| Face | MediaPipe FaceLandmarker blendshapes, used for: `jawOpen, mouthSmile, mouthFrown, browInnerUp, browDown, eyeBlink, eyeWide` |
-| Smoothing | Zero-lag (two-pass) One Euro filter on finger angles and face channels |
-| Character | Procedural: tapered capsule limbs, pill torso skinned along the spine, mitten hands with 3-bone capsule fingers, round head with ink eyes/brows/mouth driven by shape keys |
-
-## Fast path (default) and the phrase worker
-
-`run_pipeline.py --phrase` and `w2m_worker.py` use **`wanphrase2motion_fast.json`**. It differs from the mocap workflow in four ways:
-- the LLM runs outside ComfyUI
-- SAM3 is replaced by a box mask from DWPose
-- the blank control video's VAE encoding is cached
-- decoding uses the tiny `lighttaew2_1` VAE
-
-The default output is the charades-site clip (`.bin` + `.w2m.bin` fingers/face sidecar); the Blender MP4 and GLB are opt-in (`--mp4`, `--glb`).
-
-Time per 49-frame clip on the RTX 5060 Ti, measured on 2026-10-09/10:
-
-| Stage | Before | After | Change |
+| thumbs up | peace sign | teeth | eating burger |
 |---|---|---|---|
-| Mime LLM | 6–9 s (Ollama, model reloaded every run, thinking on) | ~1 s (resident llama-server; ~5 s on first use) | `mime_llm.py` |
-| Text encode | 2.5–5.8 s | 2–5 s | unchanged (more variable when VRAM is tight) |
-| VACE conditioning | 9.5–10 s | ~0 s (4.6 s on first run) | cached blank-control latent; frames bit-identical |
-| Sampling | 9.5 s | 9.4 s | unchanged |
-| VAE decode | 8–12.6 s | 0.8 s | tiny VAE; GVHMR joints within 2 mm, fingers/face within MediaPipe noise |
-| DWPose | 2.3 s | 2.3 s | unchanged |
-| SAM3 mask | 21 s | ~0 s | DWPose box; GVHMR joints within 6 mm (p95 15 mm) |
-| GVHMR | 10–10.6 s | 8.5–10 s | unchanged |
-| Preview nodes / saves | ~2 s | 0.3 s | removed |
-| Hands + face | 1.7 s | 1.2–2.4 s | unchanged |
-| Blender MP4 + ffmpeg | ~40 s | 0 s (opt-in, ~35 s) | site plays the motion in three.js |
-| **Total** | **~2 min** | **26–28 s warm, ~31 s through the site, 43 s cold, instant if cached** | |
+| [examples/thumbs_up.mp4](examples/thumbs_up.mp4) | [examples/peace_sign.mp4](examples/peace_sign.mp4) | [examples/teeth.mp4](examples/teeth.mp4) | [examples/eating_burger.mp4](examples/eating_burger.mp4) |
 
-Measured on 2026-10-09: the 12-minute run reported earlier didn't reproduce; the same command took 43 s after ComfyUI. The first run was most likely slowed by something else using the GPU.
+## The final setup (`nvfp4_384_sharp`)
 
-The worker (the site starts it automatically):
-
-```powershell
-& $PY w2m_worker.py --clips-dir <site>\data\mocap\clips --cache-dir <site>\data\w2m-wan   # port 8767
+```
+reference image ─► (VAE-encode once, cached) ─┐
+mime text ─► UMT5 ─────────────────────────────┴─► high-noise expert (2 steps) ─► low-noise expert (2 steps)
+                                                    LightX2V NVFP4, 4-step distillation built in, CFG 1
+ ─► tiny VAE decode ─► Lanczos 384×672 → 480×832 ─► light unsharp mask ─► H.264 mp4
 ```
 
-- `POST /generate {"text"}` streams NDJSON stages and ends with `{"done": true, "id", ...}`.
-- `GET /cached?text=` checks the cache without GPU work.
-- `POST /unload` frees the GPU (ComfyUI `/free` plus stopping the LLM).
-- It starts ComfyUI with your usual flags if it isn't running.
-- It frees the GPU after 5 idle minutes.
-- Results are cached per normalised phrase. Bump `PIPELINE_VERSION` to invalidate them.
+Time per clip for a new phrase, warm models, 49 frames:
 
-Install the custom nodes once (a new folder; no existing node changes): copy `comfy_nodes\comfyui-w2m` to `ComfyUI\custom_nodes\comfyui-w2m` and restart ComfyUI. The tiny VAE goes in `ComfyUI\models\vae_approx\lighttaew2_1.safetensors` (from `huggingface.co/lightx2v/Autoencoders`). The LLM uses `C:\qd\llama-g4\build\bin\llama-server.exe` (override with `W2M_LLAMA_SERVER`) on the GGUF that Ollama already downloaded; it falls back to Ollama if llama-server is missing.
-
-## Acting quality: the mime, the video, the judged takes
-
-- **The mime prompt** (`mime_system_prompt.txt`; the previous version is kept in `prompts/mime_system_prompt.v1.txt`) asks for the most obvious charades sign:
-  - big arm and hand actions, held in front of the body and facing the viewer
-  - point at body parts (teeth means pointing at the mouth)
-  - do the literal hand sign (thumbs up means a fist held out in front of the chest, thumb up)
-  - never face-only or tiny actions
-
-  The site writes the mime on Groq (`gpt-oss-120b`, through its own quota handling). If Groq is busy, the worker's local qwen3.5-9b writes it instead.
-- **Video sampling** is now 6 steps with CFG 2 and LoRA 0.6 (it was 4 steps, CFG 1). With guidance the 1.3B model actually follows hand signs, at about +20 s per take. `--fast-video` restores the old setting.
-- **Judged takes** (`take_judge.py`): each take is filmed with a random seed. Four frames go to Groq's `qwen/qwen3.8-27b` vision model, which scores 0–10 how clearly the take shows the mime. The first take scoring 7 or more wins, otherwise the best of up to 3 (`--takes`, `--accept`). Body capture runs only on the winner. The judge costs about 1k tokens and 0.5–1 s per take. Without `GROQ_API_KEY`, the first take is used.
-- **Typical times:** about 50 s when the first take passes, about 80 s when a second take is needed.
-
-## Characters on the site: skeleton, measurements, arm refinement
-
-Every clip also gets `<id>.rig.json` (`export_clip.export_rig`). The site's characters (`public/js/characters.js`) are built from it, so their proportions and placement come from the capture:
-- **Skeleton:** the clip's SMPL rest joints and per-frame joint rotations at 30 fps. Forward kinematics from these matches the position clip to within 0.5 mm on average.
-- **Body measurements** (`body_dims.py`): limb thickness, torso cross-sections, head centre and size, eye and mouth height, and hand and foot size, all measured on the SMPL body with the clip's betas. Only these numbers leave the PC, never the SMPL mesh.
-- **Ground lift:** how far to raise a character so its measured soles touch the floor.
-
-**Body model: SMPL-X.** GVHMR fits SMPL-X, so its betas and pose are SMPL-X parameters, and the skeleton, measurements and refinement all use `SMPLX_NEUTRAL.npz`. (Before 2026-10-10 they wrongly used SMPL; the worker migrates those clips on start-up.) For the **Exact fit** character, `smplx_export.py` writes:
-- `<id>.smplx.bin`: the clip's fitted SMPL-X rest mesh, 126 KB.
-- a shared `smplx-template.bin` (220 KB): faces, top-4 skin weights over the 55 joints, and part codes for colouring (skin, eyes, top, bottom, shoes, hair).
-
-The browser skins that mesh on the clip's skeleton, curls the 15 finger joints per hand from the captured angles, and opens the jaw from `jawOpen`. With SMPL-X, the wrist error relative to the mouth is 0.06–0.15 units on average (about 1–3 cm).
-
-`refine_arms.py` corrects GVHMR's arms against the video's DWPose 2D wrists before export. It works relative to the face when the hand is near it, otherwise relative to the shoulder, using two-bone IK that keeps depth, elbow direction and hand orientation. On four test takes, the wrist error relative to the mouth fell from 0.28–0.49 to 0.10–0.20 nose-to-shoulder units (about 5–10 cm → 2–4 cm). The worker upgrades clips made before this on start-up and keeps `motion_unrefined.npz` as a backup.
-
-## Requirements
-
-- ComfyUI portable at `C:\Users\ryash\OneDrive\Documents\AI\ComfyUI_windows_portable` with the custom nodes already installed (`comfyui-motioncapture`, `comfyui_controlnet_aux`, `comfyui-videohelpersuite`, `comfyui-ollama`, SAM3). No new pip packages are needed: `mediapipe`, `av`, `scipy` and `imageio-ffmpeg` are already in `python_embeded`.
-- MediaPipe models in `ComfyUI/models/mediapipe/`: `hand_landmarker.task` and `face_landmarker.task` (already downloaded). If you need them again, download from:
-  - https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task
-  - https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task
-- Blender 5.2 at `C:\Program Files\Blender Foundation\Blender 5.2\blender.exe` (override with `--blender`).
-
-## Workflow
-
-Use **`wanphrase2motion_mocap.json`**. It's a copy of `wanphrase2motion.json`, which is unchanged, with these additions:
-
-- node 200 saves the **RGB clip** to `output/w2m/clip_rgb_XXXXX.mp4`. The original only saved the DWPose skeleton render.
-- node 201 saves the **DWPose keypoints** to `output/w2m/clip_kps_XXXXX.json`.
-- node 202 shows the GVHMR npz path as text, so the API can report it.
-- the skeleton video now saves as `output/w2m/clip_dwpose_XXXXX.mp4`.
-
-## Running
-
-All commands are run from this folder using ComfyUI's embedded Python:
-
-```powershell
-$PY = "C:\Users\ryash\OneDrive\Documents\AI\ComfyUI_windows_portable\python_embeded\python.exe"
-
-# A) generate a new clip end-to-end (ComfyUI on :8188 and Ollama must be running)
-& $PY run_pipeline.py --phrase "eating burger" --name eating_burger
-
-# B) re-process a clip the mocap workflow already produced
-$OUT = "C:\Users\ryash\OneDrive\Documents\AI\ComfyUI_windows_portable\ComfyUI\output"
-& $PY run_pipeline.py --video "$OUT\w2m\clip_rgb_00001.mp4" --kps "$OUT\w2m\clip_kps_00001.json" `
-                      --npz "$OUT\smpl_params_0004.npz" --name eating_burger
-```
-
-Results go to `ComfyUI/output/w2m/<name>/`:
-
-- `<name>.mp4`: the render (720×1248, 16 fps, H.264)
-- `<name>_compare.mp4`: the source clip and the render side by side
-- `<name>.glb`: the skinned character with skeletal animation and face morph-target animation
-- `hands_face.npz`, `motion.npz`: intermediate data
-
-### Example input prompts
-
-`--phrase` is the charades word or title, not a video prompt. The Ollama node turns it into a mime description and decides the clip length (1–5 s). Phrases with a clear, full-body action read best. Hand gestures and facial expressions come through as well, but they're small on screen.
-
-```powershell
-# everyday actions: clear arm and hand motion
-& $PY run_pipeline.py --phrase "eating burger"         --name eating_burger
-& $PY run_pipeline.py --phrase "brushing teeth"        --name brushing_teeth
-& $PY run_pipeline.py --phrase "drinking coffee"       --name drinking_coffee
-& $PY run_pipeline.py --phrase "typing on a laptop"    --name typing
-& $PY run_pipeline.py --phrase "talking on the phone"  --name phone_call
-
-# whole-body motion: tests root motion and grounding
-& $PY run_pipeline.py --phrase "swimming"              --name swimming
-& $PY run_pipeline.py --phrase "playing tennis"        --name tennis
-& $PY run_pipeline.py --phrase "climbing a ladder"     --name ladder
-& $PY run_pipeline.py --phrase "skipping rope" --ground global --name skipping   # allows jumps
-
-# emotions and faces: tests the face and brows
-& $PY run_pipeline.py --phrase "surprised"             --name surprised
-& $PY run_pipeline.py --phrase "crying baby"           --name crying_baby
-& $PY run_pipeline.py --phrase "sneezing"              --name sneezing
-
-# hand-heavy: tests finger curl and spread
-& $PY run_pipeline.py --phrase "playing piano"         --name piano
-& $PY run_pipeline.py --phrase "counting money"        --name counting_money
-& $PY run_pipeline.py --phrase "thumbs up"             --name thumbs_up
-
-# movie titles: the LLM picks an iconic action to act out
-& $PY run_pipeline.py --phrase "Titanic"               --name titanic
-& $PY run_pipeline.py --phrase "Spider-Man"            --name spiderman
-& $PY run_pipeline.py --phrase "The Karate Kid"        --name karate_kid
-& $PY run_pipeline.py --phrase "Jaws"                  --name jaws
-```
-
-Tips:
-- Each run produces a new clip. The LLM seed and the second sampler's noise seed are fixed in the workflow, so re-running the same phrase usually gives a very similar clip. To get a different take, change `noise_seed` on node 117 in `wanphrase2motion_mocap.json`.
-- When a hand or the mouth is hidden (e.g. behind a prop the actor pretends to hold), the pipeline fills in from nearby frames. The face shows what's visible, so a mouth hidden behind a burger won't read as chewing.
-- Actions that turn the body sideways or away from the camera (e.g. "swimming", "climbing a ladder") give weaker finger and face tracking, but the body motion stays good.
-- To try a look without waiting for a full render, preview one frame with `--samples 16`, or use the single-frame command in the table below.
-
-Useful options: `--color "#f2a7b5"` (body colour), `--width/--height`, `--samples` (EEVEE quality vs. speed), `--ground global` (allows jumps instead of pinning a foot to the floor every frame), `--no-glb`, `--no-compare`, `--keep-frames`.
-
-Rendering takes about 10–20 s per frame on EEVEE, so roughly 10–15 minutes for a 49-frame clip. For quicker previews, lower `--samples` to 16.
-
-## Files
-
-| File | What it does |
+| Change | Time |
 |---|---|
-| `run_pipeline.py` | Single entry point: generate (optional) → extract → prepare → Blender → ffmpeg |
-| `comfy_generate.py` | Queues `wanphrase2motion_mocap.json` through the ComfyUI API and collects the output paths |
-| `extract_hands_face.py` | Hand crops + MediaPipe/DWPose fusion → finger angles; face blendshapes; One Euro smoothing |
-| `prepare_motion.py` | SMPL FK, turns the figure to face the camera, centres it, grounds the feet → `motion.npz` |
-| `blender_character.py` | Builds the rig and character, keys the animation, sets up the studio and camera, renders, exports the GLB. Run it alone with `blender -b --python blender_character.py -- --motion motion.npz --still 24 --still-out test.png` to preview one frame |
+| Q4_K_M GGUF experts + Lightning LoRAs, full VAE (start) | 66 s |
+| tiny VAE decode (`lighttaew2_1`) | 59 s |
+| start image encoded once and cached (`W2MWanImageToVideoCached`) | 55 s |
+| LightX2V NVFP4 experts (Blackwell FP4 tensor cores) | 26 s |
+| sample at 384×672, Lanczos to 480×832, sharpen | **18 s** |
 
-## Notes and limits
+## Setup
 
-- Frames are aligned by index. GVHMR, DWPose and the RGB save all consume the same VAE Decode output, so frame *i* is the same image in all three.
-- The figure is turned so its average facing points at the camera, and centred on its mean pelvis position. GVHMR's root translation is otherwise kept.
-- Finger curls use unsigned joint angles, so hyperextension reads as straight. Thumb opposition is approximate.
-- Face expressions are deliberately exaggerated. The input→output ranges are in `FACE_MAP` in `blender_character.py`.
-- The pack's `SMPL to Mixamo` node isn't used: it only moves the hips and doesn't transfer joint rotations.
+Needs an NVIDIA Blackwell GPU (RTX 50-series) for the NVFP4 speed-up (16 GB VRAM and 32 GB RAM or more recommended),
+~20 GB of disk, Python 3.10+ and git.
+
+1. **Install ComfyUI** (recent enough to load NVFP4 checkpoints). Either the [Windows portable build](https://github.com/comfyanonymous/ComfyUI/releases)
+   or a normal checkout with its requirements installed. Run it once so the folders exist.
+2. **Run the setup script.** It installs the `comfyui-w2m` node and ComfyUI-VideoHelperSuite, copies the reference image into
+   ComfyUI's `input`, and downloads the models (resumable, skips what exists):
+   - [LightX2V LightWan2.2 NVFP4](https://huggingface.co/lightx2v/LightWan2.2-A14B) `Wan2.2-I2V-A14B_NVFP4_Sparse_{high,low}_comfy.safetensors`
+   - `umt5_xxl_fp8_e4m3fn_scaled.safetensors` and `wan_2.1_vae.safetensors` from [Comfy-Org/Wan_2.2_ComfyUI_Repackaged](https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged)
+   - `lighttaew2_1.safetensors` (tiny VAE) from [lightx2v/Autoencoders](https://huggingface.co/lightx2v/Autoencoders)
+3. **Generate.** Tell the scripts where ComfyUI is (the folder containing `python_embeded`, or the checkout) and run them.
+   `stickman_i2v.py` starts ComfyUI itself (with `--use-sage-attention`, which the timings assume) if it isn't running.
+
+```powershell
+pip install -r requirements.txt            # aiohttp; skip if you run the scripts with ComfyUI's embedded Python
+$env:COMFYUI_DIR = "C:\path\to\ComfyUI_windows_portable"
+python setup.py                            # once
+python stickman_i2v.py thumbs_up
+python stickman_i2v.py --mime "The stickman waves both hands overhead, then holds still." --name wave
+```
+
+Clips go to `out/<name>.mp4`. `--seed N` for another take, `--time-twice` to time a warm run, `--compile` for batch runs (below).
+
+## What we learned
+
+**Writing the mime** (the only per-clip input). Ask for the most obvious charades sign: big arm and hand actions held in front
+of the body facing the viewer, point at body parts (teeth = point at the mouth), do the literal hand sign (thumbs up = fist held
+out in front of the chest, thumb up). Never face-only or tiny actions. End with "then holds the pose still", which gives a
+clean ending. `MIMES` in `stickman_i2v.py` has four that work. They were written by an LLM from the rules above.
+
+**Model choice** ([docs/model-comparison.md](docs/model-comparison.md)). Wan 2.2 A14B was clearly the best of Wan 5B, Wan A14B and LTX-2.3.
+Text-to-video drew a slightly different character each time; image-to-video from a fixed reference solved that. LTX-2.3
+followed prompts a bit better and is the fallback if Wan stalls.
+
+**Speed** ([docs/speed.md](docs/speed.md), timings in `docs/speed_results.csv`). What worked: NVFP4 experts (2×), 384 sampling (1.4×),
+tiny VAE and a cached start-image encode (a few seconds each). What didn't:
+- 320×560 is faster (14 s) but gestures break (thumbs up becomes a finger gun). 480 and 576 cost 26 s and 45 s and look no better.
+- SageAttention 2 kernel variants: no gain. SageAttention3: 23% faster kernel, but its preprocessing eats it, and it is less
+  accurate. Rejected.
+- Real-ESRGAN instead of Lanczos: crisper, costs 22 s.
+- `torch.compile` (`W2MCompileWan`): works, but only ~3%, because attention and the NVFP4 matmuls are hand-written kernels.
+  It pays back only after ~35 clips per ComfyUI session. KJNodes' compile node fails with dynamic VRAM.
+- The remaining floor: the two NVFP4 experts (16.8 GB) don't both fit in 16 GB of VRAM, and the GPU link is PCIe 3.0 x8
+  (~7 GB/s), so ~2 s per expert per clip is weight streaming. Raising ComfyUI's pinned-memory cap changed nothing.
+  Further speed has to come from fewer streamed bytes, fewer tokens or frames, or the text-encoder step (2.4 s per new
+  phrase), not from kernel swaps.
+
+**`--compile` prerequisites (Windows).** Triton needs a C compiler and Python headers that match the interpreter. The ComfyUI
+portable build had Python 3.13 with 3.12 `Include`/`libs`; replace them with 3.13 ones. Visual Studio's `vcvars64.bat`
+environment is applied automatically by `comfy_client.msvc_env`.
+
+## Earlier work
+
+The first version of this repo turned a Wan 2.1 VACE clip of a person into a 3D character via GVHMR/SMPL-X, MediaPipe hands and
+face, and Blender. It was replaced by the stickman approach and removed from the working tree; it is still in git history
+(commit `275c600` and earlier).
