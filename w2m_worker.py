@@ -8,6 +8,7 @@ POST /generate {"text", "fresh"?, "seed"?, "plan"?: {"prompt", "seconds", "model
      -> NDJSON stream: {"stage": "queued"|"plan"|"encode"|"video"|"decode"|"pose"|"body"|"hands"|"export", "t"}...
         then {"done": true, "id", "frames", "seconds", "prompt", "cached", "timings"} or {"error": "..."}
 POST /unload                     stop the LLM server and free ComfyUI's VRAM (the site calls this before HY/Gemma)
+POST /shutdown                   exit the worker; stops the LLM and the ComfyUI it started
 
 Clip files land in --clips-dir as <id>.bin (site format), <id>.w2m.bin (fingers/face sidecar for the stick figure)
 and <id>.rig.json (skeleton + rotations + body measurements for the skinned characters).
@@ -19,6 +20,7 @@ import random
 import json
 import os
 import re
+import signal
 import sys
 import threading
 import time
@@ -250,6 +252,10 @@ def make_handler(worker):
             if self.path == "/unload":
                 threading.Thread(target=worker.unload, daemon=True).start()
                 return self._json(200, {"ok": True})
+            if self.path == "/shutdown":  # main()'s finally stops the LLM and the ComfyUI it started
+                self._json(200, {"ok": True})
+                threading.Thread(target=_server.shutdown, daemon=True).start()
+                return
             if self.path != "/generate":
                 return self._json(404, {"error": "not found"})
             text = re.sub(r"\s+", " ", str(body.get("text", ""))).strip()[:80]
@@ -275,7 +281,11 @@ def make_handler(worker):
     return H
 
 
+_server = None  # the ThreadingHTTPServer, so POST /shutdown can stop it
+
+
 def main():
+    global _server
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--clips-dir", required=True)
     ap.add_argument("--cache-dir", required=True)
@@ -290,12 +300,19 @@ def main():
     ap.add_argument("--accept", type=float, default=7, help="judge score (0-10) that accepts a take")
     ap.add_argument("--warm", action="store_true", help="start ComfyUI and load the LLM right away")
     a = ap.parse_args()
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))  # so the finally below runs on SIGTERM too
+    cg.reap_stale_comfy()  # an earlier worker may have died without stopping its ComfyUI
     w = Worker(a)
     if a.warm:
         threading.Thread(target=lambda: (cg.ensure_comfy(a.server, a.portable_root), w.llm.warm()), daemon=True).start()
-    srv = ThreadingHTTPServer(("127.0.0.1", a.port), make_handler(w))
+    srv = _server = ThreadingHTTPServer(("127.0.0.1", a.port), make_handler(w))
     print(f"[worker] listening on 127.0.0.1:{a.port} (clips -> {a.clips_dir})", flush=True)
-    srv.serve_forever()
+    try:
+        srv.serve_forever()
+    finally:
+        # Ctrl+C / SIGTERM: stop the ComfyUI we started so it doesn't outlive the worker
+        w.llm.stop("worker exiting")
+        cg.stop_comfy()
 
 
 if __name__ == "__main__":

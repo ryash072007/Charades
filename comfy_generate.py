@@ -66,14 +66,69 @@ def msvc_env():
         return None
 
 
+COMFY_PID_FILE = os.path.join(HERE, "logs", "comfyui.pid")
+_comfy_proc = None  # the ComfyUI this module started; a ComfyUI the owner launched by hand is never touched
+
+
+def _write_pid(pid):
+    os.makedirs(os.path.dirname(COMFY_PID_FILE), exist_ok=True)
+    with open(COMFY_PID_FILE, "w") as f:
+        f.write(str(pid))
+
+
+def _clear_pid():
+    try:
+        os.remove(COMFY_PID_FILE)
+    except OSError:
+        pass
+
+
+def stop_comfy():
+    """Stop the ComfyUI started by ensure_comfy (and anything it spawned). No-op if we didn't start one."""
+    global _comfy_proc
+    proc, _comfy_proc = _comfy_proc, None
+    if proc is not None and proc.poll() is None:
+        if os.name == "nt":  # /T takes the child processes too
+            subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True)
+        else:
+            proc.terminate()
+        try:
+            proc.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+        print(f"[comfy] stopped ComfyUI (pid {proc.pid})", flush=True)
+    _clear_pid()
+
+
+def reap_stale_comfy():
+    """Kill a ComfyUI that an earlier worker started and then lost (killed without a chance to clean up).
+    Only a PID we wrote ourselves, and only if its command line is ComfyUI's main.py."""
+    try:
+        pid = int(open(COMFY_PID_FILE).read().strip())
+    except (OSError, ValueError):
+        return
+    cmd = ""
+    if os.name == "nt":
+        out = subprocess.run(["powershell", "-NoProfile", "-Command",
+                              f"(Get-CimInstance Win32_Process -Filter 'ProcessId={pid}').CommandLine"],
+                             capture_output=True, text=True, timeout=30).stdout
+        cmd = out.strip()
+    if "ComfyUI" in cmd and "main.py" in cmd:
+        subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True)
+        print(f"[comfy] reaped stale ComfyUI (pid {pid}) left by an earlier worker", flush=True)
+    _clear_pid()
+
+
 def ensure_comfy(server="http://127.0.0.1:8188", portable_root=DEFAULT_COMFY, wait_s=180):
     """Start ComfyUI (same flags as the owner's launcher) if it isn't answering."""
+    global _comfy_proc
     if comfy_up(server):
         return False
     py = os.path.join(portable_root, "python_embeded", "python.exe")
     log = open(os.path.join(HERE, "logs", "comfyui.log"), "a") if os.path.isdir(os.path.join(HERE, "logs")) else subprocess.DEVNULL
-    subprocess.Popen([py, os.path.join("ComfyUI", "main.py"), *COMFY_ARGS], cwd=portable_root, env=msvc_env() or None,
-                     stdout=log, stderr=subprocess.STDOUT, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    _comfy_proc = subprocess.Popen([py, os.path.join("ComfyUI", "main.py"), *COMFY_ARGS], cwd=portable_root, env=msvc_env() or None,
+                                   stdout=log, stderr=subprocess.STDOUT, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    _write_pid(_comfy_proc.pid)
     t0 = time.time()
     while time.time() - t0 < wait_s:
         if comfy_up(server):
