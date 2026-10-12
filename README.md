@@ -29,20 +29,25 @@ Time per clip for a new phrase, warm models, 49 frames:
 
 ## Setup
 
-Needs an NVIDIA Blackwell GPU (RTX 50-series) for the NVFP4 speed-up, and a ComfyUI recent enough to load the NVFP4
-checkpoints, started with `--use-sage-attention`.
+Needs an NVIDIA Blackwell GPU (RTX 50-series) for the NVFP4 speed-up (16 GB VRAM and 32 GB RAM or more recommended),
+~20 GB of disk, Python 3.10+ and git.
 
-1. Copy `comfy_nodes/comfyui-w2m` to `ComfyUI/custom_nodes/comfyui-w2m`. Also install `ComfyUI-VideoHelperSuite` (for the mp4 save node).
-2. Models:
-   - `diffusion_models/Wan2.2-I2V-A14B_NVFP4_Sparse_high_comfy.safetensors` and `…_low_comfy.safetensors` (LightX2V, LightWan2.2 NVFP4)
-   - `text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors`, `vae/wan_2.1_vae.safetensors`
-   - `vae_approx/lighttaew2_1.safetensors` (from `huggingface.co/lightx2v/Autoencoders`)
-3. Point the scripts at ComfyUI: `$env:COMFYUI_DIR = "C:\path\to\ComfyUI_windows_portable"` (default `C:\ComfyUI_windows_portable`).
-4. Run with ComfyUI's embedded Python (it already has aiohttp). The script starts ComfyUI if it isn't running and copies the reference image into `ComfyUI/input`:
+1. **Install ComfyUI** (recent enough to load NVFP4 checkpoints). Either the [Windows portable build](https://github.com/comfyanonymous/ComfyUI/releases)
+   or a normal checkout with its requirements installed. Run it once so the folders exist.
+2. **Run the setup script.** It installs the `comfyui-w2m` node and ComfyUI-VideoHelperSuite, copies the reference image into
+   ComfyUI's `input`, and downloads the models (resumable, skips what exists):
+   - [LightX2V LightWan2.2 NVFP4](https://huggingface.co/lightx2v/LightWan2.2-A14B) `Wan2.2-I2V-A14B_NVFP4_Sparse_{high,low}_comfy.safetensors`
+   - `umt5_xxl_fp8_e4m3fn_scaled.safetensors` and `wan_2.1_vae.safetensors` from [Comfy-Org/Wan_2.2_ComfyUI_Repackaged](https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged)
+   - `lighttaew2_1.safetensors` (tiny VAE) from [lightx2v/Autoencoders](https://huggingface.co/lightx2v/Autoencoders)
+3. **Generate.** Tell the scripts where ComfyUI is (the folder containing `python_embeded`, or the checkout) and run them.
+   `stickman_i2v.py` starts ComfyUI itself (with `--use-sage-attention`, which the timings assume) if it isn't running.
 
 ```powershell
-& "$env:COMFYUI_DIR\python_embeded\python.exe" stickman_i2v.py thumbs_up
-& "$env:COMFYUI_DIR\python_embeded\python.exe" stickman_i2v.py --mime "The stickman waves both hands overhead, then holds still." --name wave
+pip install -r requirements.txt            # aiohttp; skip if you run the scripts with ComfyUI's embedded Python
+$env:COMFYUI_DIR = "C:\path	o\ComfyUI_windows_portable"
+python setup.py                            # once
+python stickman_i2v.py thumbs_up
+python stickman_i2v.py --mime "The stickman waves both hands overhead, then holds still." --name wave
 ```
 
 Clips go to `out/<name>.mp4`. `--seed N` for another take, `--time-twice` to time a warm run, `--compile` for batch runs (below).

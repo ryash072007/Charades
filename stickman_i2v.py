@@ -6,7 +6,7 @@
 
 The stickman is always the one in refs/relaxed_stickman_appendages.jpg, so every clip is the same character. The mime
 (one or two sentences saying what the stickman does) is the only per-phrase input; see README.md for how to write one.
-Clips land in out/<name>.mp4 (480x832, 16 fps, 49 frames). Needs ComfyUI; see README.md for the models and nodes.
+Clips land in out/<name>.mp4 (480x832, 16 fps, 49 frames). Run setup.py once first (installs the nodes and downloads the models); see README.md.
 
 Pipeline: LightX2V NVFP4 experts (4-step distillation built in) -> sample at 384x672 -> tiny VAE decode ->
 Lanczos up to 480x832 -> light unsharp mask.
@@ -94,7 +94,7 @@ def build_workflow(mime, seed=SEED, compile_blocks=False, prefix="stickman/out")
 
 
 def install_reference(comfy_dir):
-    dst = os.path.join(comfy_dir, "ComfyUI", "input", REF)
+    dst = os.path.join(cc.comfy_paths(comfy_dir)[1], "input", REF)
     if not os.path.isfile(dst):
         shutil.copy(os.path.join(HERE, "refs", REF), dst)
 
@@ -111,7 +111,7 @@ def generate(mime, name, seed=SEED, compile_blocks=False, comfy_dir=cc.COMFY_DIR
     vid = next(v for n in out.values() for v in (n.get("gifs") or []) if v["filename"].endswith(".mp4"))
     dst = os.path.join(HERE, "out", f"{name}.mp4")
     os.makedirs(os.path.dirname(dst), exist_ok=True)
-    shutil.copy(os.path.join(comfy_dir, "ComfyUI", "output", vid.get("subfolder", ""), vid["filename"]), dst)
+    shutil.copy(os.path.join(cc.comfy_paths(comfy_dir)[1], "output", vid.get("subfolder", ""), vid["filename"]), dst)
     by_class = {}
     for k, v in times.items():
         c = wf[k]["class_type"]

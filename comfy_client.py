@@ -1,11 +1,13 @@
 """Minimal ComfyUI client: start the server if needed, queue an API-format workflow, follow it over the websocket.
 
-Run with ComfyUI's embedded Python (it has aiohttp). Set COMFYUI_DIR to your ComfyUI_windows_portable folder.
+Needs aiohttp (`pip install -r requirements.txt`, or run with ComfyUI's embedded Python, which has it).
+Set COMFYUI_DIR to your ComfyUI_windows_portable folder or a ComfyUI checkout.
 """
 import asyncio
 import json
 import os
 import subprocess
+import sys
 import time
 import urllib.request
 import uuid
@@ -15,6 +17,16 @@ COMFY_DIR = os.environ.get("COMFYUI_DIR", r"C:\ComfyUI_windows_portable")
 SERVER = "http://127.0.0.1:8188"
 # --use-sage-attention (SageAttention 2) is what the speed numbers assume; --fast fp16_accumulation is a small extra
 COMFY_ARGS = ["--fast", "fp16_accumulation", "--use-sage-attention"] + os.environ.get("W2M_COMFY_EXTRA_ARGS", "").split()
+
+
+def comfy_paths(comfy_dir=None):
+    """(python, ComfyUI source folder, working dir) for either layout: the Windows portable build
+    (<dir>/python_embeded + <dir>/ComfyUI) or a plain ComfyUI checkout (<dir>/main.py, current Python)."""
+    comfy_dir = comfy_dir or COMFY_DIR
+    portable = os.path.join(comfy_dir, "python_embeded", "python.exe")
+    if os.path.isfile(portable):
+        return portable, os.path.join(comfy_dir, "ComfyUI"), comfy_dir
+    return sys.executable, comfy_dir, comfy_dir
 
 
 def _get(server, path, timeout=5):
@@ -59,10 +71,10 @@ def ensure_comfy(server=SERVER, comfy_dir=COMFY_DIR, wait_s=180):
     """Start ComfyUI if it isn't answering. Returns True if this call started it."""
     if comfy_up(server):
         return False
-    py = os.path.join(comfy_dir, "python_embeded", "python.exe")
+    py, src, cwd = comfy_paths(comfy_dir)
     os.makedirs(os.path.join(HERE, "logs"), exist_ok=True)
     log = open(os.path.join(HERE, "logs", "comfyui.log"), "a")
-    subprocess.Popen([py, os.path.join("ComfyUI", "main.py"), *COMFY_ARGS], cwd=comfy_dir, env=msvc_env() or None,
+    subprocess.Popen([py, os.path.join(src, "main.py"), *COMFY_ARGS], cwd=cwd, env=msvc_env() or None,
                      stdout=log, stderr=subprocess.STDOUT, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     t0 = time.time()
     while time.time() - t0 < wait_s:
