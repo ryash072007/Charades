@@ -6,6 +6,7 @@
 
 The stickman is always the one in refs/relaxed_stickman_appendages.jpg, so every clip is the same character. The mime
 (one or two sentences saying what the stickman does) is the only per-phrase input; see README.md for how to write one.
+If this script had to start ComfyUI it stops it again when done (--keep-alive to leave it up).
 Clips land in out/<name>.mp4 (480x832, 16 fps, 49 frames). Run setup.py once first (installs the nodes and downloads the models); see README.md.
 
 Pipeline: LightX2V NVFP4 experts (4-step distillation built in) -> sample at 384x672 -> tiny VAE decode ->
@@ -128,13 +129,18 @@ if __name__ == "__main__":
     ap.add_argument("--seed", type=int, default=SEED)
     ap.add_argument("--compile", action="store_true", help="torch.compile the transformer blocks (needs Triton + MSVC)")
     ap.add_argument("--time-twice", action="store_true", help="run once untimed first so model loading isn't counted")
+    ap.add_argument("--keep-alive", action="store_true", help="leave ComfyUI running afterwards (by default one this script started is stopped)")
     ap.add_argument("--comfy-dir", default=cc.COMFY_DIR)
     a = ap.parse_args()
     mime = a.mime or (MIMES[a.phrase] if a.phrase else None)
     if not mime:
         ap.error("give a built-in phrase or --mime")
     name = a.name or a.phrase or "clip"
-    if a.time_twice:
-        generate(mime, name, 7, a.compile, a.comfy_dir)
-    path, total, parts = generate(mime, name, a.seed, a.compile, a.comfy_dir)
+    try:
+        if a.time_twice:
+            generate(mime, name, 7, a.compile, a.comfy_dir)
+        path, total, parts = generate(mime, name, a.seed, a.compile, a.comfy_dir)
+    finally:
+        if not a.keep_alive:
+            cc.stop_comfy()  # only a ComfyUI this script started; one you launched yourself stays up
     print(f"[stickman] {name}: {total:.1f}s -> {os.path.relpath(path, HERE)}  {parts}", flush=True)

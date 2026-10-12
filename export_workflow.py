@@ -103,7 +103,10 @@ if __name__ == "__main__":
     ap.add_argument("--server", default=cc.SERVER)
     a = ap.parse_args()
     cc.ensure_comfy(a.server)
-    oi = cc._get(a.server, "/object_info", timeout=120)
+    try:
+        oi = cc._get(a.server, "/object_info", timeout=120)
+    finally:
+        cc.stop_comfy()  # only if we started it
     ui = convert(to_api(a.compile), oi)
     dst = os.path.join(HERE, "workflows", "phrase2stickman" + ("_compile" if a.compile else "") + ".json")
     os.makedirs(os.path.dirname(dst), exist_ok=True)

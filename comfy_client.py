@@ -19,6 +19,9 @@ SERVER = "http://127.0.0.1:8188"
 COMFY_ARGS = ["--fast", "fp16_accumulation", "--use-sage-attention"] + os.environ.get("W2M_COMFY_EXTRA_ARGS", "").split()
 
 
+_proc = None  # the ComfyUI this module started; a ComfyUI you launched yourself is never touched
+
+
 def comfy_paths(comfy_dir=None):
     """(python, ComfyUI source folder, working dir) for either layout: the Windows portable build
     (<dir>/python_embeded + <dir>/ComfyUI) or a plain ComfyUI checkout (<dir>/main.py, current Python)."""
@@ -68,13 +71,14 @@ def msvc_env():
 
 
 def ensure_comfy(server=SERVER, comfy_dir=COMFY_DIR, wait_s=180):
-    """Start ComfyUI if it isn't answering. Returns True if this call started it."""
+    """Start ComfyUI if it isn't answering. Returns True if this call started it (stop_comfy() then stops it)."""
+    global _proc
     if comfy_up(server):
         return False
     py, src, cwd = comfy_paths(comfy_dir)
     os.makedirs(os.path.join(HERE, "logs"), exist_ok=True)
     log = open(os.path.join(HERE, "logs", "comfyui.log"), "a")
-    subprocess.Popen([py, os.path.join(src, "main.py"), *COMFY_ARGS], cwd=cwd, env=msvc_env() or None,
+    _proc = subprocess.Popen([py, os.path.join(src, "main.py"), *COMFY_ARGS], cwd=cwd, env=msvc_env() or None,
                      stdout=log, stderr=subprocess.STDOUT, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     t0 = time.time()
     while time.time() - t0 < wait_s:
@@ -83,6 +87,23 @@ def ensure_comfy(server=SERVER, comfy_dir=COMFY_DIR, wait_s=180):
             return True
         time.sleep(1)
     raise RuntimeError("ComfyUI did not start")
+
+
+def stop_comfy():
+    """Stop the ComfyUI that ensure_comfy started, with its child processes, which frees the GPU. No-op otherwise."""
+    global _proc
+    proc, _proc = _proc, None
+    if proc is None or proc.poll() is not None:
+        return
+    if os.name == "nt":  # /T takes the child processes too
+        subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True)
+    else:
+        proc.terminate()
+    try:
+        proc.wait(timeout=30)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+    print("[comfy] stopped ComfyUI", flush=True)
 
 
 async def run_workflow(server, wf, timeout=3600):

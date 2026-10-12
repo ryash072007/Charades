@@ -40,7 +40,7 @@ Needs an NVIDIA Blackwell GPU (RTX 50-series) for the NVFP4 speed-up (16 GB VRAM
    - `umt5_xxl_fp8_e4m3fn_scaled.safetensors` and `wan_2.1_vae.safetensors` from [Comfy-Org/Wan_2.2_ComfyUI_Repackaged](https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged)
    - `lighttaew2_1.safetensors` (tiny VAE) from [lightx2v/Autoencoders](https://huggingface.co/lightx2v/Autoencoders)
 3. **Generate.** Tell the scripts where ComfyUI is (the folder containing `python_embeded`, or the checkout) and run them.
-   `stickman_i2v.py` starts ComfyUI itself (with `--use-sage-attention`, which the timings assume) if it isn't running.
+   `stickman_i2v.py` starts ComfyUI itself (with `--use-sage-attention`, which the timings assume) if it isn't running, and stops it afterwards.
 
 ```powershell
 pip install -r requirements.txt            # aiohttp; skip if you run the scripts with ComfyUI's embedded Python
@@ -49,6 +49,8 @@ python setup.py                            # once
 python stickman_i2v.py thumbs_up
 python stickman_i2v.py --mime "The stickman waves both hands overhead, then holds still." --name wave
 ```
+
+**ComfyUI lifetime.** If `stickman_i2v.py` has to start ComfyUI, it stops it again when the clip is done, which frees the GPU. A ComfyUI you started yourself is never touched. For batch runs start ComfyUI yourself, or pass `--keep-alive` to leave the one the script started running.
 
 **In the ComfyUI UI.** Drag [workflows/phrase2stickman.json](workflows/phrase2stickman.json) onto the canvas (after `setup.py`), edit the
 mime sentence at the end of the green Prompt node, and press Run. It is the same graph as `stickman_i2v.py`, but saves with
