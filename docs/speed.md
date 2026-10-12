@@ -1,4 +1,7 @@
-# Speeding up Wan 2.2 A14B image-to-video (stickman)
+# Speed experiments: Wan 2.2 A14B image-to-video (stickman)
+
+The final setup is `nvfp4_384_sharp`, built by `../stickman_i2v.py`. The experiment clips and the benchmark script were removed from the
+repo to keep it small (see git history before the cleanup commit); `speed_results.csv` keeps every timing.
 
 Same model family (Wan 2.2 A14B image-to-video), same reference image (`relaxed_stickman_appendages.jpg`), same
 prompts and seed. All numbers are for a **new phrase** (prompt not cached) on the RTX 5060 Ti 16 GB, warm models,
@@ -12,7 +15,7 @@ prompts and seed. All numbers are for a **new phrase** (prompt not cached) on th
 | + **LightX2V LightWan2.2 NVFP4 experts** (Blackwell FP4 tensor cores, 4-step distillation built in): sampling 50 s → 23 s | `nvfp4_cache_tae` | **26.3–26.8 s** | **2.5×** |
 | + sample at 384×672, Lanczos up to 480×832, light sharpen: sampling 23 s → 14 s | `nvfp4_384_sharp` | **18.1 s** | **3.7×** |
 | (too far) 320×560 | `nvfp4_320_sharp` | 14.1 s | 4.7×, but gestures degrade (thumbs up → finger-gun) |
-| + torch.compile (`W2MCompileWan`, see below): sampling step 1.95–2.05 s → 1.88 s | `nvfp4_384_sharp_w2mc` | 17.7–18.1 s | 3.7× (−0.4 s) |
+| + torch.compile (`W2MCompileWan`, optional, see below): sampling step 1.95–2.05 s → 1.88 s | `nvfp4_384_sharp_w2mc` | 17.7–18.1 s | 3.7× (−0.4 s) |
 
 Tried and dropped:
 - SageAttention 2 kernel variants (`nvfp4_sage_fp8`, `nvfp4_sage_fp8pp`): no gain. The default kernel is already the fastest here.
@@ -32,7 +35,7 @@ Tried and dropped:
 ## torch.compile
 
 Making it work at all: the portable Python is 3.13.12 but shipped 3.12.7 headers and `python312.lib`, so Triton's
-compiled launcher couldn't load. `python_embeded/Include` and `libs` now hold 3.13 ones (from uv's CPython 3.13.14, same
+compiled launcher couldn't load. `python_embeded/Include` and `libs` had to be replaced with 3.13 ones (from uv's CPython 3.13.14, same
 ABI); the 3.12 ones are kept in `Include_py312_backup` / `libs_py312_backup`. ComfyUI runs inside the Visual Studio
 environment (`comfy_generate.msvc_env`).
 
@@ -59,9 +62,4 @@ same at all three (the strokes are thick). Gesture correctness changes the way a
 improving: 384 had the cleanest thumbs up and a good peace sign; 576 blurred the thumbs up and turned the peace sign into
 crossed arms. 384 stays the pick.
 
-## What to grade
-
-The quality question is the NVFP4 distilled model and the 384 render against the round-2 setup (`baseline`, the same
-clips as `../stickman_t2v/clips/wan22_a14b_i2v_app`). Fill in `grades.csv` (1–5) for the three folders on the same five
-criteria as before (gesture, readable, stickman style, body integrity, motion), plus **same as baseline?** (is the
-quality loss acceptable).
+The four test phrases were thumbs_up, teeth, eating_burger and peace_sign, same seed (424242) throughout.
