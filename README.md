@@ -44,7 +44,7 @@ Needs an NVIDIA Blackwell GPU (RTX 50-series) for the NVFP4 speed-up (16 GB VRAM
 
 ```powershell
 pip install -r requirements.txt            # aiohttp; skip if you run the scripts with ComfyUI's embedded Python
-$env:COMFYUI_DIR = "C:\path	o\ComfyUI_windows_portable"
+$env:COMFYUI_DIR = "C:\path\to\ComfyUI_windows_portable"
 python setup.py                            # once
 python stickman_i2v.py thumbs_up
 python stickman_i2v.py --mime "The stickman waves both hands overhead, then holds still." --name wave
