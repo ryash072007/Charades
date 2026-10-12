@@ -1,4 +1,4 @@
-# WANPhrase2Motion: stickman charades clips
+# Phrase2Stickman: charades clips of one stickman
 
 Turns a one-sentence mime ("The stickman holds one fist out in front of the chest with the thumb pointing straight up…")
 into a 3 s, 16 fps clip of the **same stickman** (`refs/relaxed_stickman_appendages.jpg`) acting it out. It is
