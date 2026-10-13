@@ -29,7 +29,7 @@ OUTPUT_FILE = Path("charades_prompts.json")
 FPS = 16
 
 # Supported by the workflow's 4n+1 frame-count convention.
-# Qwen selects the most suitable length for each segment.
+# The model selects the most suitable length.
 ALLOWED_FRAME_COUNTS = [49, 65, 81, 97]
 
 
@@ -41,11 +41,11 @@ ALLOWED_FRAME_COUNTS = [49, 65, 81, 97]
 
 BASE_PROMPT = (
     "2D cartoon stick figure animation on a plain white background, "
-    "flat hand-drawn style, static camera. "
+    "flat hand-drawn style."
     "A simple stickman with a round white head with dot eyes and "
     "a small, simply drawn mouth, spiky teal hair, "
     "thick rounded blue outline limbs, a white rectangular torso "
-    "outlined in blue, teal shorts. The character is centered "
+    "outlined in blue, teal shorts. The character starts centered "
     "with the whole body visible from head to feet. "
     "The stickman has round blue hands with five short fingers, "
     "small round ears on both sides of the head and a small button nose. "
@@ -60,15 +60,14 @@ BASE_PROMPT = (
 SYSTEM_PROMPT = """
 You generate prompts for a silent-charades animation pipeline.
 
-Generate one or more clips for an English word or phrase.
+Generate one clip for an English word or phrase.
 
 ## Fixed constraints
 
 - Exactly one existing humanoid stickman.
 - No visible props, objects, additional characters, text, captions or sound.
 - Facial expressions, body language and imaginary-object pantomime are allowed.
-- Every segment starts independently from the original reference image.
-- Never depend on events or movements from a previous clip.
+- The clip starts from the original reference image.
 - The character's design and visual style are already established.
 - The application supplies the fixed character description and visual style.
 
@@ -77,14 +76,7 @@ Generate one or more clips for an English word or phrase.
 Choose a recognizable physical representation of the intended meaning.
 Prefer the common meaning of the word or phrase.
 
-Use one clip by default. Split a word or phrase into two or three clips
-only when splitting genuinely makes it easier to guess.
-
-Splitting may use meaningful word components, recognizable syllable-based
-gestures, or distinct clues. Do not split familiar gestures unnecessarily.
-
-Each segment must have a clue identifying the target or component
-represented by that clip.
+Generate a single clip that represents the whole word or phrase.
 
 ## 2. Starting-frame edit for Klein
 
@@ -134,14 +126,17 @@ Rules:
 - Prefer one recognizable action per clip.
 - Let Wan determine natural intermediate movements.
 - Do not over-specify finger mechanics, joint angles or anatomy.
-- Avoid unnecessary nodding, smiling, walking or secondary actions.
+- Avoid unnecessary nodding, smiling or secondary actions.
 - Use facial expressions and body language when they help communicate
   the target.
 - For abstract concepts, use a simple physical metaphor.
 - Imaginary-object pantomime is allowed, but actual objects must not appear.
+- The stickman may move freely through the scene (run, walk, jump, travel
+  across the frame) and the camera may move or follow. Do not say "in
+  place" or keep the character stationary unless the target requires it.
 - Avoid complicated turns unless they are important to the target.
-- Do not repeat the character description, art style, camera,
-  background or visual constraints in the action.
+- Do not repeat the character description, art style, background or
+  visual constraints in the action.
 - The action must flow naturally from the edited starting frame.
 
 The edit prompt and action prompt serve different purposes:
@@ -165,19 +160,15 @@ These are guidelines, not mandatory action stages.
 Do not add movements just to fill the clip.
 A simple thumbs-up should normally use 49 frames.
 
-Choose the length independently for each segment.
-
 ## Output
 
 Return only JSON matching the supplied schema.
 
-Each segment must contain:
-- clue: the target or component represented by the clip.
+Contain exactly:
 - start_frame_edit: a short, direct image-edit instruction for Klein.
 - action: the concise movement instruction for Wan.
 - frame_count: one of 49, 65, 81 or 97.
 
-Use one segment by default and no more than three.
 Do not include markdown, explanations, complete prompts, negative prompts,
 or any additional fields.
 """
@@ -190,38 +181,18 @@ or any additional fields.
 SCHEMA = {
     "type": "object",
     "properties": {
-        "segments": {
-            "type": "array",
-            "minItems": 1,
-            "maxItems": 3,
-            "items": {
-                "type": "object",
-                "properties": {
-                    "clue": {
-                        "type": "string"
-                    },
-                    "start_frame_edit": {
-                        "type": "string"
-                    },
-                    "action": {
-                        "type": "string"
-                    },
-                    "frame_count": {
-                        "type": "integer",
-                        "enum": ALLOWED_FRAME_COUNTS
-                    }
-                },
-                "required": [
-                    "clue",
-                    "start_frame_edit",
-                    "action",
-                    "frame_count"
-                ],
-                "additionalProperties": False
-            }
+        "start_frame_edit": {
+            "type": "string"
+        },
+        "action": {
+            "type": "string"
+        },
+        "frame_count": {
+            "type": "integer",
+            "enum": ALLOWED_FRAME_COUNTS
         }
     },
-    "required": ["segments"],
+    "required": ["start_frame_edit", "action", "frame_count"],
     "additionalProperties": False
 }
 
@@ -262,10 +233,9 @@ payload = {
         {
             "role": "user",
             "content": (
-                f"Create silent-charades clips for: {TARGET}\n"
+                f"Create a silent-charades clip for: {TARGET}\n"
                 "Generate a concise Klein edit prompt, a direct Wan "
-                "action prompt, and the shortest suitable clip length "
-                "for each segment."
+                "action prompt, and the shortest suitable clip length."
             )
         }
     ],
@@ -317,74 +287,34 @@ except json.JSONDecodeError as exc:
 # Validate output and construct downstream prompts
 # ============================================================
 
-segments = generated.get("segments")
+start_frame_edit = generated.get("start_frame_edit", "").strip()
+action = generated.get("action", "").strip()
+frame_count = generated.get("frame_count")
 
-if not isinstance(segments, list) or not 1 <= len(segments) <= 3:
-    raise SystemExit(
-        "Invalid result: expected between 1 and 3 segments."
-    )
+if not start_frame_edit:
+    raise SystemExit("Empty Klein edit prompt.")
 
-output_segments = []
+if not action:
+    raise SystemExit("Empty action.")
 
-for index, segment in enumerate(segments, start=1):
-    clue = segment.get("clue", "").strip()
-    start_frame_edit = segment.get("start_frame_edit", "").strip()
-    action = segment.get("action", "").strip()
-    frame_count = segment.get("frame_count")
+if not action.lower().startswith("the stickman"):
+    raise SystemExit(f"Action must start with 'The stickman': {action}")
 
-    if not clue:
-        raise SystemExit(f"Segment {index} has an empty clue.")
+if (
+    isinstance(frame_count, bool)
+    or not isinstance(frame_count, int)
+    or frame_count not in ALLOWED_FRAME_COUNTS
+):
+    raise SystemExit(f"Unsupported frame count: {frame_count!r}")
 
-    if not start_frame_edit:
-        raise SystemExit(
-            f"Segment {index} has an empty Klein edit prompt."
-        )
+duration_seconds = frame_count / FPS
 
-    if not action:
-        raise SystemExit(f"Segment {index} has an empty action.")
+# Send the short, unmodified LLM-generated instruction to Klein.
+# No prefix, suffix, or extra preservation text is added.
+klein_edit_prompt = start_frame_edit
 
-    if not action.lower().startswith("the stickman"):
-        raise SystemExit(
-            f"Segment {index} action must start with "
-            f"'The stickman': {action}"
-        )
-
-    if (
-        isinstance(frame_count, bool)
-        or not isinstance(frame_count, int)
-        or frame_count not in ALLOWED_FRAME_COUNTS
-    ):
-        raise SystemExit(
-            f"Segment {index} has unsupported frame count: "
-            f"{frame_count!r}"
-        )
-
-    duration_seconds = frame_count / FPS
-
-    # Send the short, unmodified LLM-generated instruction to Klein.
-    # No prefix, suffix, or extra preservation text is added.
-    klein_edit_prompt = start_frame_edit
-
-    # Add the fixed character/style description for Wan.
-    positive_prompt = BASE_PROMPT + action
-
-    output_segments.append({
-        "index": index,
-        "clue": clue,
-
-        # Pass directly to the Klein image-edit workflow.
-        "start_frame_edit_instruction": start_frame_edit,
-        "klein_edit_prompt": klein_edit_prompt,
-
-        # Pass to Wan with the image returned by Klein.
-        "action": action,
-        "positive_prompt": positive_prompt,
-
-        # Pass frame_count into the Wan workflow's length input.
-        "frame_count": frame_count,
-        "fps": FPS,
-        "duration_seconds": duration_seconds
-    })
+# Add the fixed character/style description for Wan.
+positive_prompt = BASE_PROMPT + action
 
 
 # ============================================================
@@ -395,7 +325,19 @@ result = {
     "target": TARGET,
     "model": MODEL,
     "allowed_frame_counts": ALLOWED_FRAME_COUNTS,
-    "segments": output_segments
+
+    # Pass directly to the Klein image-edit workflow.
+    "start_frame_edit_instruction": start_frame_edit,
+    "klein_edit_prompt": klein_edit_prompt,
+
+    # Pass to Wan with the image returned by Klein.
+    "action": action,
+    "positive_prompt": positive_prompt,
+
+    # Pass frame_count into the Wan workflow's length input.
+    "frame_count": frame_count,
+    "fps": FPS,
+    "duration_seconds": duration_seconds
 }
 
 OUTPUT_FILE.write_text(
