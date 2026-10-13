@@ -1,6 +1,6 @@
 {
-  "target": "suspicious",
-  "model": "qwen3.5:9b",
+  "target": "running",
+  "model": "gemma-4-26b-a4b-it-qat-nvfp4",
   "allowed_frame_counts": [
     49,
     65,
@@ -10,11 +10,11 @@
   "segments": [
     {
       "index": 1,
-      "clue": "suspicious",
-      "start_frame_edit_instruction": "Raise eyebrows slightly and tilt head to one side with shoulders hunched forward.",
-      "klein_edit_prompt": "Raise eyebrows slightly and tilt head to one side with shoulders hunched forward.",
-      "action": "The stickman furrows brows, narrows eyes, and tilts head sideways with a wary stance.",
-      "positive_prompt": "2D cartoon stick figure animation on a plain white background, flat hand-drawn style, static camera. A simple stickman with a round white head with dot eyes and a small, simply drawn mouth, spiky teal hair, thick rounded blue outline limbs, a white rectangular torso outlined in blue, teal shorts. The character is centered with the whole body visible from head to feet. The stickman has round blue hands with five short fingers, small round ears on both sides of the head and a small button nose. No visible props, no additional characters, no text or captions. The stickman furrows brows, narrows eyes, and tilts head sideways with a wary stance.",
+      "clue": "running",
+      "start_frame_edit_instruction": "Bend the knees and tilt the torso forward slightly.",
+      "klein_edit_prompt": "Bend the knees and tilt the torso forward slightly.",
+      "action": "The stickman runs in place.",
+      "positive_prompt": "2D cartoon stick figure animation on a plain white background, flat hand-drawn style, static camera. A simple stickman with a round white head with dot eyes and a small, simply drawn mouth, spiky teal hair, thick rounded blue outline limbs, a white rectangular torso outlined in blue, teal shorts. The character is centered with the whole body visible from head to feet. The stickman has round blue hands with five short fingers, small round ears on both sides of the head and a small button nose. No visible props, no additional characters, no text or captions. The stickman runs in place.",
       "frame_count": 49,
       "fps": 16,
       "duration_seconds": 3.0625

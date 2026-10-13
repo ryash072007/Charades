@@ -50,12 +50,6 @@ BASE_PROMPT = (
 SYSTEM_PROMPT = """
 You generate prompts for a silent-charades animation pipeline.
 
-The pipeline uses:
-1. Qwen to plan each clip.
-2. FLUX.2 Klein 4B Distilled to edit the original reference image
-   into a starting frame.
-3. Wan 2.2 I2V to animate that starting frame.
-
 Generate one or more clips for an English word or phrase.
 
 ## Fixed constraints
