@@ -11,6 +11,7 @@ import gzip
 import json
 import sys
 import time
+from datetime import date
 from pathlib import Path
 
 import requests
@@ -22,7 +23,12 @@ OUTPUT_FILE = Path(__file__).parent / "movies.json"
 IMDB = "https://datasets.imdbws.com"
 BATCH = 15
 MIN_MIMEABILITY = 2
-VERY_POPULAR_RANK = 300  # rank among kept titles
+
+# "very_popular" gets a full iconic-scene mime, so it is kept tiny: the most
+# popular films of the last decade, plus a few timeless mega-hits by name.
+RECENT_YEARS = 10
+VERY_POPULAR_RECENT = 40  # top N by votes among recent titles
+MEGA_HITS = {"titanic", "iron man", "spider-man"}
 
 RATE_PROMPT = """
 You help build a charades game where a single stickman mimes a movie title
@@ -95,7 +101,31 @@ def top_movies(count):
     return movies[:count]
 
 
+def assign_popularity(movies):
+    """Set rank and popularity tier on a vote-sorted list, in place."""
+    cutoff = date.today().year - RECENT_YEARS
+    recent_rank = 0
+    for rank, m in enumerate(movies, start=1):
+        m["rank"] = rank
+        recent = m["year"].isdigit() and int(m["year"]) >= cutoff
+        if recent:
+            recent_rank += 1
+        top = (recent and recent_rank <= VERY_POPULAR_RECENT) or (
+            m["title"].casefold() in MEGA_HITS
+        )
+        m["popularity"] = "very_popular" if top else "popular"
+
+
 def main():
+    if "--retier" in sys.argv:  # recompute tiers without re-rating
+        kept = json.loads(OUTPUT_FILE.read_text(encoding="utf-8"))
+        assign_popularity(kept)
+        OUTPUT_FILE.write_text(
+            json.dumps(kept, indent=1, ensure_ascii=False), encoding="utf-8"
+        )
+        print(sum(m["popularity"] == "very_popular" for m in kept), "very_popular")
+        return
+
     count = 1500
     if "--candidates" in sys.argv:
         count = int(sys.argv[sys.argv.index("--candidates") + 1])
@@ -122,9 +152,7 @@ def main():
               f"({time.time() - t0:.0f}s)", end="", flush=True)
     print()
 
-    for rank, m in enumerate(kept, start=1):
-        m["rank"] = rank
-        m["popularity"] = "very_popular" if rank <= VERY_POPULAR_RANK else "popular"
+    assign_popularity(kept)
 
     OUTPUT_FILE.write_text(
         json.dumps(kept, indent=1, ensure_ascii=False), encoding="utf-8"

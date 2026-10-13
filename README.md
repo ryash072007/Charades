@@ -59,6 +59,42 @@ it needs ComfyUI running.
 
 Clips go to `out/<name>.mp4`. `--seed N` for another take, `--time-twice` to time a warm run, `--compile` for batch runs (below).
 
+## Writing the prompts with a local LLM (movie charades)
+
+A second, independent stage turns an English movie title into the prompts for the clips above. It runs
+**Gemma 4 26B-A4B (QAT NVFP4 GGUF)** through [llama.cpp](https://github.com/ggml-org/llama.cpp), which this repo downloads
+itself. It needs no Ollama and nothing outside the repo. On the RTX 5060 Ti the whole model sits in VRAM at 4k context:
+about 117 tokens/s generating, 5,200 tokens/s on the prompt, and a plan takes about 10 s including the model load.
+The scripts only write prompts and frame counts. They do not call ComfyUI.
+
+```powershell
+python llm_setup.py                          # once: llama.cpp (CUDA 13.4 build) + the 13.5 GB model, resumable
+python llama_runs.py "suspicious" [--think]  # one word -> one clip -> charades_prompts.json
+python charades_plan.py "Titanic" [--think]  # movie title -> clip list -> charades_plan.json
+python build_movie_list.py                   # optional, ~10 min: rebuild movies.json
+```
+
+| File | What it does |
+|---|---|
+| `llm_setup.py` | Downloads llama.cpp into `llama.cpp/` and the model into `models/` (both gitignored). 12 parallel range requests; rerun to resume. |
+| `llama_runs.py` | Starts `llama-server` once per process and exposes `chat_json` (schema-constrained output) and `generate_clip`, which makes the Klein start-frame edit, the Wan action prompt (`BASE_PROMPT` + action) and one frame count (49, 65, 81 or 97). One word in, one clip out. `--think` turns reasoning on (capped at 1,024 tokens). |
+| `charades_plan.py` | Plans a whole movie as 1–4 clips chosen by popularity (below). The player already knows it is a movie, so there is no "movie" clip. Each piece goes through `generate_clip`. |
+| `build_movie_list.py` | Builds `movies.json` from IMDb's non-commercial datasets (`data/`, gitignored): the 1,500 most-voted movies, rated by the LLM for English language and mimeability (1–5), keeping about 1,170. The 40 most-voted films of the last 10 years plus `MEGA_HITS` (Titanic, Iron Man, Spider-Man) are `very_popular`, the rest `popular`. `--retier` re-applies the tier rules to the existing file without re-rating. |
+| `movies.json` | The result. `ollama_runs.py` and `ollama_runs_v2.py` are the older Ollama versions of `llama_runs.py`. |
+
+**How a title is planned.** The title's popularity comes from `movies.json`; a title that isn't there is rated by one extra LLM
+call (`very_popular`, `popular` or obscure). Then:
+- `very_popular` (only the most popular recent films and `MEGA_HITS`, so not Shawshank): one iconic action (Iron Man firing repulsors, arms wide on a ship's bow).
+- everything else (`popular`, obscure, unlisted): drop filler words and mime each meaningful word as its own clip, up to four. The schema only allows `title_words` for these tiers.
+- The LLM judge's `very_popular` is demoted to `popular` unless the film is from the last 10 years or in `MEGA_HITS`.
+
+`charades_plan.json` records `popularity` and `popularity_source` (`catalog` or `llm`). Run the scripts one at a time. Two at once
+start two model servers that fight over the GPU and time out.
+
+**Known gaps.** Catalog lookup needs the exact title (case-insensitive), so "Spiderman" falls through to the LLM rating. An
+invented title can be spelled out letter by letter. The mimeability ratings are one noisy pass from a small model. The Wan
+renders of these prompts have not been checked.
+
 ## What we learned
 
 **Writing the mime** (the only per-clip input). Ask for the most obvious charades sign: big arm and hand actions held in front

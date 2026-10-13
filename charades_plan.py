@@ -1,24 +1,20 @@
 """Turn an English movie title into a sequence of charades clips.
 
-Clip 1 is always the "movie" marker (cranking an old film camera). The rest
-are chosen by the LLM: for very famous films an iconic scene or character,
-otherwise the title's words/syllables. Each clip goes through llama_runs.
+Only the very most popular recent films get a single iconic-scene mime;
+everything else is mimed word by word. Each clip goes through llama_runs.
 
 Usage: python charades_plan.py "The Lion King" [--think]
 """
 import json
 import sys
 import time
+from datetime import date
 from pathlib import Path
 
+from build_movie_list import MEGA_HITS, RECENT_YEARS
 from llama_runs import MODEL, chat_json, generate_clip
 
 OUTPUT_FILE = Path("charades_plan.json")
-
-MOVIE_MARKER = (
-    "the word 'movie': pantomime turning the crank of an old hand-cranked "
-    "film camera"
-)
 
 MAX_PIECES = 4
 MOVIES_FILE = Path(__file__).parent / "movies.json"
@@ -26,8 +22,8 @@ MOVIES_FILE = Path(__file__).parent / "movies.json"
 PLANNER_PROMPT = f"""
 You plan a silent charades performance for an English movie title.
 The performer is one stickman who can only mime: no props, objects,
-text, speech or sound. The audience already knows the answer is a movie
-(a "movie" clip is shown first), so do not mime that.
+text, speech or sound. The audience already knows the answer is a movie,
+so never mime "movie", a camera or filming.
 
 Break the title into 1 to {MAX_PIECES} pieces to be mimed one after another.
 Players should find it easy, so prefer fewer, clearer pieces.
@@ -49,12 +45,13 @@ Return only JSON matching the schema.
 
 GUIDANCE = {
     "very_popular": (
-        "This is a very famous film. Use iconic_scene with a single piece, "
-        "unless no one action is unmistakable."
+        "This is one of the most famous films of all. Use iconic_scene with "
+        "a single piece: its most unmistakable character or action."
     ),
     "popular": (
-        "This is a well-known film. Use iconic_scene with one or two pieces "
-        "if a clear action exists; otherwise title_words."
+        "This is a well-known film. Use title_words and mime the meaningful "
+        "words, keeping the pieces few. Use iconic_scene only if one action "
+        "is truly unmistakable."
     ),
     "unlisted": (
         "This film is not widely known. Use title_words and mime every "
@@ -63,13 +60,54 @@ GUIDANCE = {
 }
 
 
+JUDGE_PROMPT = """
+You judge how famous an English-language movie is to a general audience.
+- very_popular: a recent global blockbuster that almost anyone would
+  recognise from its title or a single iconic scene (Avengers: Endgame,
+  Barbie, Top Gun: Maverick).
+- popular: well known to most movie-goers, but not a household name.
+- obscure: many people would not know it, or you do not recognise the title.
+Be strict: choose very_popular only for true household names, and obscure
+whenever you are unsure the movie exists or is widely known.
+Also give the year the movie was released (0 if unknown).
+"""
+
+JUDGE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "popularity": {
+            "type": "string",
+            "enum": ["very_popular", "popular", "obscure"],
+        },
+        "release_year": {"type": "integer"},
+    },
+    "required": ["popularity", "release_year"],
+    "additionalProperties": False,
+}
+
+
+def judge_popularity(title, thinking=False):
+    """Ask the LLM how famous a title is when it is not in movies.json."""
+    result = chat_json(
+        JUDGE_PROMPT, f"Movie title: {title}", JUDGE_SCHEMA, "judge", thinking
+    )
+    popularity = result["popularity"]
+    if popularity == "obscure":
+        return "unlisted"
+    # The iconic-scene tier is only for recent films or the named mega-hits.
+    recent = result["release_year"] >= date.today().year - RECENT_YEARS
+    if popularity == "very_popular" and not (recent or title.casefold().strip() in MEGA_HITS):
+        return "popular"
+    return popularity
+
+
 def lookup_popularity(title):
     if MOVIES_FILE.exists():
         wanted = title.casefold().strip()
         for m in json.loads(MOVIES_FILE.read_text(encoding="utf-8")):
             if m["title"].casefold() == wanted:
                 return m["popularity"]
-    return "unlisted"
+    return None
 
 
 PLAN_SCHEMA = {
@@ -93,26 +131,38 @@ PLAN_SCHEMA = {
 }
 
 
+def plan_schema(popularity):
+    """Only the very popular tier may use an iconic scene; the rest are title words."""
+    schema = json.loads(json.dumps(PLAN_SCHEMA))
+    if popularity != "very_popular":
+        schema["properties"]["approach"]["enum"] = ["title_words"]
+    return schema
+
+
 def plan_movie(title, thinking=False):
     popularity = lookup_popularity(title)
+    source = "catalog"
+    if popularity is None:
+        popularity = judge_popularity(title, thinking)
+        source = "llm"
     plan = chat_json(
         PLANNER_PROMPT,
         f"Movie title: {title}\n{GUIDANCE[popularity]}",
-        PLAN_SCHEMA, "plan", thinking,
+        plan_schema(popularity), "plan", thinking,
     )
     pieces = [p["mime"].strip() for p in plan["pieces"] if p["mime"].strip()]
     if not pieces:
         raise SystemExit("Planner returned no pieces.")
 
     clips = []
-    for kind, target in [("marker", MOVIE_MARKER)] + [("piece", m) for m in pieces]:
-        clip = generate_clip(target, thinking)
-        clips.append({"index": len(clips) + 1, "kind": kind, **clip})
+    for mime in pieces:
+        clips.append({"index": len(clips) + 1, **generate_clip(mime, thinking)})
 
     return {
         "title": title,
         "model": MODEL,
         "popularity": popularity,
+        "popularity_source": source,
         "approach": plan["approach"],
         "clips": clips,
         "total_frames": sum(c["frame_count"] for c in clips),
@@ -132,8 +182,8 @@ if __name__ == "__main__":
     OUTPUT_FILE.write_text(
         json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8"
     )
-    print(f"{title}: {result['popularity']} -> {result['approach']}")
+    print(f"{title}: {result['popularity']} ({result['popularity_source']}) ->{result['approach']}")
     for c in result["clips"]:
-        print(f"  {c['index']}. [{c['kind']}] {c['target']}\n"
+        print(f"  {c['index']}. {c['target']}\n"
               f"     {c['action']} ({c['frame_count']}f)")
     print(f"\nSaved plan to: {OUTPUT_FILE.resolve()}")
