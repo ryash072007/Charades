@@ -1,5 +1,4 @@
 {
-  "target": "suspicious",
   "model": "gemma-4-26b-a4b-it-qat-nvfp4",
   "allowed_frame_counts": [
     49,
@@ -7,10 +6,11 @@
     81,
     97
   ],
-  "start_frame_edit_instruction": "Tilt the head slightly and squint the eyes.",
-  "klein_edit_prompt": "Tilt the head slightly and squint the eyes.",
-  "action": "The stickman narrows his eyes and glances cautiously from side to side.",
-  "positive_prompt": "2D cartoon stick figure animation on a plain white background, flat hand-drawn style.A simple stickman with a round white head with dot eyes and a small, simply drawn mouth, spiky teal hair, thick rounded blue outline limbs, a white rectangular torso outlined in blue, teal shorts. The character starts centered with the whole body visible from head to feet. The stickman has round blue hands with five short fingers, small round ears on both sides of the head and a small button nose. No visible props, no additional characters, no text or captions. The stickman narrows his eyes and glances cautiously from side to side.",
+  "target": "suspiscious",
+  "start_frame_edit_instruction": "Give the character a subtle suspicious facial expression.",
+  "klein_edit_prompt": "Give the character a subtle suspicious facial expression.",
+  "action": "The stickman narrows their eyes and glances cautiously from side to side.",
+  "positive_prompt": "2D cartoon stick figure animation on a plain white background, flat hand-drawn style.A simple stickman with a round white head with dot eyes and a small, simply drawn mouth, spiky teal hair, thick rounded blue outline limbs, a white rectangular torso outlined in blue, teal shorts. The character starts centered with the whole body visible from head to feet. The stickman has round blue hands with five short fingers, small round ears on both sides of the head and a small button nose. No visible props, no additional characters, no text or captions. The stickman narrows their eyes and glances cautiously from side to side.",
   "frame_count": 49,
   "fps": 16,
   "duration_seconds": 3.0625

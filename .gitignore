@@ -4,3 +4,4 @@ logs/
 out/
 llama.cpp/
 models/
+data/

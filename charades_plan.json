@@ -1,0 +1,33 @@
+{
+  "title": "Titanic",
+  "model": "gemma-4-26b-a4b-it-qat-nvfp4",
+  "popularity": "very_popular",
+  "approach": "iconic_scene",
+  "clips": [
+    {
+      "index": 1,
+      "kind": "marker",
+      "target": "the word 'movie': pantomime turning the crank of an old hand-cranked film camera",
+      "start_frame_edit_instruction": "Hold both hands up as if gripping an invisible handle.",
+      "klein_edit_prompt": "Hold both hands up as if gripping an invisible handle.",
+      "action": "The stickman rotates their right hand in a circular motion to mimic cranking a camera.",
+      "positive_prompt": "2D cartoon stick figure animation on a plain white background, flat hand-drawn style.A simple stickman with a round white head with dot eyes and a small, simply drawn mouth, spiky teal hair, thick rounded blue outline limbs, a white rectangular torso outlined in blue, teal shorts. The character starts centered with the whole body visible from head to feet. The stickman has round blue hands with five short fingers, small round ears on both sides of the head and a small button nose. No visible props, no additional characters, no text or captions. The stickman rotates their right hand in a circular motion to mimic cranking a camera.",
+      "frame_count": 49,
+      "fps": 16,
+      "duration_seconds": 3.0625
+    },
+    {
+      "index": 2,
+      "kind": "piece",
+      "target": "spreading arms wide like Jack and Rose on the bow of a ship",
+      "start_frame_edit_instruction": "Raise both arms out to the sides at shoulder height.",
+      "klein_edit_prompt": "Raise both arms out to the sides at shoulder height.",
+      "action": "The stickman leans forward slightly with arms spread wide as if embracing the wind.",
+      "positive_prompt": "2D cartoon stick figure animation on a plain white background, flat hand-drawn style.A simple stickman with a round white head with dot eyes and a small, simply drawn mouth, spiky teal hair, thick rounded blue outline limbs, a white rectangular torso outlined in blue, teal shorts. The character starts centered with the whole body visible from head to feet. The stickman has round blue hands with five short fingers, small round ears on both sides of the head and a small button nose. No visible props, no additional characters, no text or captions. The stickman leans forward slightly with arms spread wide as if embracing the wind.",
+      "frame_count": 49,
+      "fps": 16,
+      "duration_seconds": 3.0625
+    }
+  ],
+  "total_frames": 98
+}

@@ -19,11 +19,6 @@ MODEL = MODEL_PATH.stem
 PORT = 8089
 BASE_URL = f"http://127.0.0.1:{PORT}"
 
-# Set True here, or pass --think on the command line.
-THINKING = "--think" in sys.argv[1:]
-
-TARGET = " ".join(a for a in sys.argv[1:] if a != "--think").strip() or "suspicious"
-
 OUTPUT_FILE = Path("charades_prompts.json")
 
 FPS = 16
@@ -201,7 +196,14 @@ SCHEMA = {
 # Generate action plans
 # ============================================================
 
-def start_server():
+_server = None
+
+
+def start_server(thinking=False):
+    """Start llama-server once per process; later calls reuse it."""
+    global _server
+    if _server is not None:
+        return
     if not LLAMA_SERVER.exists() or not MODEL_PATH.exists():
         raise SystemExit("Missing llama.cpp or model; run: python llm_setup.py")
     proc = subprocess.Popen(
@@ -209,12 +211,13 @@ def start_server():
             str(LLAMA_SERVER), "-m", str(MODEL_PATH),
             "--port", str(PORT), "-c", "4096", "-np", "1",
             "-ngl", "99", "-fa", "on", "--no-mmproj", "--jinja",
-            "--reasoning", "on" if THINKING else "off",
-            "--reasoning-budget", "1024" if THINKING else "0", "--no-webui",
+            "--reasoning", "on" if thinking else "off",
+            "--reasoning-budget", "1024" if thinking else "0", "--no-webui",
         ],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
     atexit.register(proc.terminate)
+    _server = proc
     for _ in range(300):
         if proc.poll() is not None:
             raise SystemExit("llama-server exited during startup")
@@ -227,123 +230,108 @@ def start_server():
     raise SystemExit("llama-server did not become ready")
 
 
-payload = {
-    "messages": [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {
-            "role": "user",
-            "content": (
-                f"Create a silent-charades clip for: {TARGET}\n"
-                "Generate a concise Klein edit prompt, a direct Wan "
-                "action prompt, and the shortest suitable clip length."
-            )
-        }
-    ],
-    "response_format": {
-        "type": "json_schema",
-        "json_schema": {"name": "charades", "strict": True, "schema": SCHEMA},
-    },
-    "temperature": 0.3,
-    "top_p": 0.9,
-    "top_k": 40,
-    "repeat_penalty": 1.05,
-    "max_tokens": 2500 if THINKING else 1024,
-}
+def chat_json(system, user, schema, name, thinking=False, max_tokens=None):
+    """One schema-constrained completion; returns the parsed JSON."""
+    start_server(thinking)
+    payload = {
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {"name": name, "strict": True, "schema": schema},
+        },
+        "temperature": 0.3,
+        "top_p": 0.9,
+        "top_k": 40,
+        "repeat_penalty": 1.05,
+        "max_tokens": max_tokens or (2500 if thinking else 1024),
+    }
+    try:
+        response = requests.post(
+            f"{BASE_URL}/v1/chat/completions", json=payload, timeout=180
+        )
+        response.raise_for_status()
+        data = response.json()
+    except requests.RequestException as exc:
+        raise SystemExit(f"llama-server request failed: {exc}") from exc
 
-try:
-    t0 = time.time()
-    start_server()
-    t1 = time.time()
-    response = requests.post(
-        f"{BASE_URL}/v1/chat/completions", json=payload, timeout=180
+    content = data["choices"][0]["message"]["content"]
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError as exc:
+        print(f"JSON parsing failed: {exc}")
+        print(f"Finish reason: {data['choices'][0].get('finish_reason', 'unknown')}")
+        print("\nResponse tail:")
+        print(content[-1500:])
+        raise SystemExit(1) from exc
+
+
+def generate_clip(target, thinking=False):
+    """Build the Klein edit + Wan prompt for one clip."""
+    generated = chat_json(
+        SYSTEM_PROMPT,
+        f"Create a silent-charades clip for: {target}\n"
+        "Generate a concise Klein edit prompt, a direct Wan "
+        "action prompt, and the shortest suitable clip length.",
+        SCHEMA, "charades", thinking,
     )
-    response.raise_for_status()
-    data = response.json()
-    t2 = time.time()
-except requests.RequestException as exc:
-    raise SystemExit(f"llama-server request failed: {exc}") from exc
 
-usage = data.get("usage", {})
-print(
-    f"[server start {t1 - t0:.1f}s | generate {t2 - t1:.1f}s | "
-    f"{usage.get('completion_tokens', '?')} tokens]"
-)
+    start_frame_edit = generated.get("start_frame_edit", "").strip()
+    action = generated.get("action", "").strip()
+    frame_count = generated.get("frame_count")
 
-content = data["choices"][0]["message"]["content"]
+    if not start_frame_edit:
+        raise SystemExit("Empty Klein edit prompt.")
 
-try:
-    generated = json.loads(content)
+    if not action:
+        raise SystemExit("Empty action.")
 
-except json.JSONDecodeError as exc:
-    print(f"JSON parsing failed: {exc}")
-    print(f"Finish reason: {data['choices'][0].get('finish_reason', 'unknown')}")
-    print(f"Generated characters: {len(content)}")
-    print("\nResponse tail:")
-    print(content[-1500:])
-    raise SystemExit(1) from exc
+    if not action.lower().startswith("the stickman"):
+        raise SystemExit(f"Action must start with 'The stickman': {action}")
 
+    if (
+        isinstance(frame_count, bool)
+        or not isinstance(frame_count, int)
+        or frame_count not in ALLOWED_FRAME_COUNTS
+    ):
+        raise SystemExit(f"Unsupported frame count: {frame_count!r}")
 
-# ============================================================
-# Validate output and construct downstream prompts
-# ============================================================
+    return {
+        "target": target,
 
-start_frame_edit = generated.get("start_frame_edit", "").strip()
-action = generated.get("action", "").strip()
-frame_count = generated.get("frame_count")
+        # Pass directly to the Klein image-edit workflow.
+        # No prefix, suffix, or extra preservation text is added.
+        "start_frame_edit_instruction": start_frame_edit,
+        "klein_edit_prompt": start_frame_edit,
 
-if not start_frame_edit:
-    raise SystemExit("Empty Klein edit prompt.")
+        # Pass to Wan with the image returned by Klein.
+        "action": action,
+        "positive_prompt": BASE_PROMPT + action,
 
-if not action:
-    raise SystemExit("Empty action.")
-
-if not action.lower().startswith("the stickman"):
-    raise SystemExit(f"Action must start with 'The stickman': {action}")
-
-if (
-    isinstance(frame_count, bool)
-    or not isinstance(frame_count, int)
-    or frame_count not in ALLOWED_FRAME_COUNTS
-):
-    raise SystemExit(f"Unsupported frame count: {frame_count!r}")
-
-duration_seconds = frame_count / FPS
-
-# Send the short, unmodified LLM-generated instruction to Klein.
-# No prefix, suffix, or extra preservation text is added.
-klein_edit_prompt = start_frame_edit
-
-# Add the fixed character/style description for Wan.
-positive_prompt = BASE_PROMPT + action
+        # Pass frame_count into the Wan workflow's length input.
+        "frame_count": frame_count,
+        "fps": FPS,
+        "duration_seconds": frame_count / FPS,
+    }
 
 
-# ============================================================
-# Save results
-# ============================================================
+if __name__ == "__main__":
+    thinking = "--think" in sys.argv[1:]
+    target = " ".join(a for a in sys.argv[1:] if a != "--think").strip() or "suspicious"
 
-result = {
-    "target": TARGET,
-    "model": MODEL,
-    "allowed_frame_counts": ALLOWED_FRAME_COUNTS,
+    t0 = time.time()
+    result = {
+        "model": MODEL,
+        "allowed_frame_counts": ALLOWED_FRAME_COUNTS,
+        **generate_clip(target, thinking),
+    }
+    print(f"[total {time.time() - t0:.1f}s]")
 
-    # Pass directly to the Klein image-edit workflow.
-    "start_frame_edit_instruction": start_frame_edit,
-    "klein_edit_prompt": klein_edit_prompt,
-
-    # Pass to Wan with the image returned by Klein.
-    "action": action,
-    "positive_prompt": positive_prompt,
-
-    # Pass frame_count into the Wan workflow's length input.
-    "frame_count": frame_count,
-    "fps": FPS,
-    "duration_seconds": duration_seconds
-}
-
-OUTPUT_FILE.write_text(
-    json.dumps(result, indent=2, ensure_ascii=False),
-    encoding="utf-8"
-)
-
-print(json.dumps(result, indent=2, ensure_ascii=False))
-print(f"\nSaved prompts to: {OUTPUT_FILE.resolve()}")
+    OUTPUT_FILE.write_text(
+        json.dumps(result, indent=2, ensure_ascii=False),
+        encoding="utf-8"
+    )
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+    print(f"\nSaved prompts to: {OUTPUT_FILE.resolve()}")
