@@ -2,14 +2,28 @@
 <html>
     <head>
         <title>Charades</title>
+        <link rel="stylesheet" href="style.css">
     </head>
     <body>
         <h1>AI Charades</h1>
         <p> Dumb Charades with friends but a stickman acts it out for both teams</p>
-        <video src = "../examples/thumbs_up.mp4" controls></video>
-        <video src = "../examples/peace_sign.mp4" controls></video>
-        <video src = "../examples/teeth.mp4" controls></video>
-        <video src = "../examples/eating_burger.mp4" controls></video>
-
+        <div class="grid">
+            <div class="card">
+                <h2>Thumbs up</h2>
+                <video src="../examples/thumbs_up.mp4" controls></video>
+            </div>
+            <div class="card">
+                <h2>Peace sign</h2>
+                <video src="../examples/peace_sign.mp4" controls></video>
+            </div>
+            <div class="card">
+                <h2>Teeth</h2>
+                <video src="../examples/teeth.mp4" controls></video>
+            </div>
+            <div class="card">
+                <h2>Eating a burger</h2>
+                <video src="../examples/eating_burger.mp4" controls></video>
+            </div>
+        </div>
     </body>
 </html>

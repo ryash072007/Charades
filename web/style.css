@@ -1,0 +1,22 @@
+body {
+    background-color: #c4622d;
+    color: #3b2412;
+    font-family: Arial, sans-serif;
+    text-align: center;
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 60px;
+}
+
+.card {
+    background-color: #e8d7b8;
+    border-radius: 12px;
+    padding: 16px;
+}
+
+video {
+    width: 100%;
+}
