@@ -20,3 +20,7 @@ body {
 video {
     width: 100%;
 }
+#clip{
+    max-width: 350px;
+    min-height: 500px;
+}
