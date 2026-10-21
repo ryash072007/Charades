@@ -42,3 +42,29 @@ function createLobby() {
     showScreen("lobby-screen");
 }
 document.getElementById("create-btn").addEventListener("click", createLobby);
+
+function joinLobby(){
+    const name = document.getElementById("username-input").value.trim();
+
+
+    if(name==="")
+    {
+        alert("Type your name!");
+        return;
+    }
+
+    const code = document.getElementById("code-input").value.trim();
+    if(code === "")
+    {
+        alert("Type the lobby code that you want to join!");
+        return;
+    }
+
+    document.getElementById("lobby-code").textContent = code;
+
+    showScreen("lobby-screen");
+
+
+}
+
+document.getElementById("join-btn").addEventListener("click", joinLobby);
