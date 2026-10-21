@@ -28,3 +28,17 @@ function startGame() {
 }
 
 document.getElementById("start-btn").addEventListener("click", startGame);
+
+function createLobby() {
+    const name = document.getElementById("username-input").value.trim();
+
+    if (name === "") {
+        alert("Type your name first!");
+        return;
+    }
+
+    const code = Math.random().toString(36).slice(2, 6).toUpperCase();
+    document.getElementById("lobby-code").textContent = code;
+    showScreen("lobby-screen");
+}
+document.getElementById("create-btn").addEventListener("click", createLobby);
