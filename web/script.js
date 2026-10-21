@@ -16,3 +16,15 @@ function playRandomClip() {
 }
 
 button.addEventListener("click", playRandomClip);
+function showScreen(id) {
+    document.getElementById("entrance-screen").classList.add("hidden");
+    document.getElementById("lobby-screen").classList.add("hidden");
+    document.getElementById("game-screen").classList.add("hidden");
+
+    document.getElementById(id).classList.remove("hidden");
+}
+function startGame() {
+    showScreen("game-screen");
+}
+
+document.getElementById("start-btn").addEventListener("click", startGame);

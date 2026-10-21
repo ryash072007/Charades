@@ -5,32 +5,33 @@
         <link rel="stylesheet" href="style.css">
     </head>
     <body>
-        <h1>AI Charades</h1>
-        <p> Dumb Charades with friends but a stickman acts it out for both teams</p>
-        <div class = "card">
-            <video id="clip" controls>  </video>
-            <br>
-            <br>
-            <button id = "play-btn"> Play a random clip</button>
+        <!-- Screen 1: entrance -->
+        <div id="entrance-screen" class="screen card">
+            <h1>AI Charades</h1>
+            <input id="username-input" placeholder="Your name">
+            <br><br>
+            <button id="create-btn">Create lobby</button>
+            <p>or</p>
+            <input id="code-input" placeholder="Lobby code">
+            <button id="join-btn">Join lobby</button>
         </div>
-        <div class="grid">
-            <div class="card">
-                <h2>Thumbs up</h2>
-                <video src="../examples/thumbs_up.mp4" controls></video>
-            </div>
-            <div class="card">
-                <h2>Peace sign</h2>
-                <video src="../examples/peace_sign.mp4" controls></video>
-            </div>
-            <div class="card">
-                <h2>Teeth</h2>
-                <video src="../examples/teeth.mp4" controls></video>
-            </div>
-            <div class="card">
-                <h2>Eating a burger</h2>
-                <video src="../examples/eating_burger.mp4" controls></video>
-            </div>
+
+
+        <!-- Screen 2: lobby -->
+        <div id="lobby-screen" class="screen card hidden">
+            <h2>Lobby code: <span id="lobby-code"></span></h2>
+            <p>Waiting for players...</p>
+            <button id="start-btn">Start game</button>
         </div>
-        <script src = "script.js"></script>
+
+
+        <!-- Screen 3: game -->
+        <div id="game-screen" class="screen card hidden">
+            <video id="clip" controls></video>
+            <br><br>
+            <button id="play-btn">Play a random clip</button>
+        </div>
+
+        <script src="script.js"></script>
     </body>
 </html>

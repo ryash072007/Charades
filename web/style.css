@@ -24,3 +24,7 @@ video {
     max-width: 350px;
     min-height: 500px;
 }
+.hidden {
+    display: none;
+}
+
