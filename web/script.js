@@ -16,6 +16,8 @@ function playRandomClip() {
 }
 
 button.addEventListener("click", playRandomClip);
+
+
 function showScreen(id) {
     document.getElementById("entrance-screen").classList.add("hidden");
     document.getElementById("lobby-screen").classList.add("hidden");
@@ -23,9 +25,12 @@ function showScreen(id) {
 
     document.getElementById(id).classList.remove("hidden");
 }
+
+
 function startGame() {
     showScreen("game-screen");
 }
+
 
 document.getElementById("start-btn").addEventListener("click", startGame);
 
@@ -53,7 +58,7 @@ function joinLobby(){
         return;
     }
 
-    const code = document.getElementById("code-input").value.trim();
+    const code = document.getElementById("code-input").value.trim().toUpperCase();
     if(code === "")
     {
         alert("Type the lobby code that you want to join!");
