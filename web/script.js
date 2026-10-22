@@ -9,12 +9,34 @@ const clips = [
 const video = document.getElementById("clip");
 const button = document.getElementById("play-btn");
 
+let timeLeft = 30;
+let timerId = null;
+
+function startTimer() {
+    clearInterval(timerId);
+    timeLeft = 30;
+    document.getElementById("timer").textContent = "Time: " + timeLeft;
+
+    timerId = setInterval(tick, 1000);
+}
+
+function tick() {
+    timeLeft -= 1;
+    document.getElementById("timer").textContent = "Time: " + timeLeft;
+
+    if (timeLeft === 0) {
+        clearInterval(timerId);
+        document.getElementById("timer").textContent = "Time's up!";
+    }
+}
+
 function playRandomClip() {
     const randomIndex = Math.floor(Math.random() * clips.length);
     
     video.src = clips[randomIndex].file;
     document.getElementById("hint").textContent = makeBlanks(clips[randomIndex].answer);
     video.play();
+    startTimer();
     console.log("Playing clip number", randomIndex);
 }
 
