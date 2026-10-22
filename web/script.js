@@ -1,16 +1,19 @@
 const clips = [
-    "../examples/thumbs_up.mp4",
-    "../examples/peace_sign.mp4",
-    "../examples/teeth.mp4",
-    "../examples/eating_burger.mp4",
+    { file: "../examples/thumbs_up.mp4", answer: "thumbs up" },
+    { file: "../examples/peace_sign.mp4", answer: "peace sign" },
+    { file: "../examples/teeth.mp4", answer: "teeth" },
+    { file: "../examples/eating_burger.mp4", answer: "eating burger" }
 ];
+
 
 const video = document.getElementById("clip");
 const button = document.getElementById("play-btn");
 
 function playRandomClip() {
     const randomIndex = Math.floor(Math.random() * clips.length);
-    video.src = clips[randomIndex];
+    
+    video.src = clips[randomIndex].file;
+    document.getElementById("hint").textContent = makeBlanks(clips[randomIndex].answer);
     video.play();
     console.log("Playing clip number", randomIndex);
 }
@@ -72,4 +75,19 @@ function joinLobby(){
 
 }
 
+
 document.getElementById("join-btn").addEventListener("click", joinLobby);
+
+function makeBlanks(answer) {
+    let blanks = "";
+    for (const letter of answer) {
+        if (letter === " ") {
+            blanks += "   ";
+        } else {
+            blanks += "_ ";
+        }
+    }
+    return blanks;
+}
+
+

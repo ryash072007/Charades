@@ -40,5 +40,9 @@ video {
 .stage {
     flex: 2;
 }
+#hint {
+    white-space: pre;
+}
+
 
 
