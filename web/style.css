@@ -27,4 +27,18 @@ video {
 .hidden {
     display: none;
 }
+.game-layout {
+    display: flex;
+    gap: 50px
+
+}
+
+.team {
+    flex: 1;
+}
+
+.stage {
+    flex: 2;
+}
+
 
