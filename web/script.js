@@ -12,6 +12,9 @@ const button = document.getElementById("play-btn");
 let timeLeft = 30;
 let timerId = null;
 let currentClip = null;
+let currentTeam = 0;
+let team1Score = 0;
+let team2Score = 0;
 
 function startTimer() {
     clearInterval(timerId);
@@ -35,6 +38,13 @@ function playRandomClip() {
     const randomIndex = Math.floor(Math.random() * clips.length);
     currentClip = clips[randomIndex];
 
+    if (currentTeam === 1) {
+        currentTeam = 2;
+    } else {
+        currentTeam = 1;
+    }
+    document.getElementById("turn").textContent = "Team " + currentTeam + "'s turn";
+
     video.src = currentClip.file;
     document.getElementById("hint").textContent = makeBlanks(currentClip.answer);
     document.getElementById("result").textContent = "";
@@ -54,6 +64,16 @@ function checkGuess() {
 
     if (guess === currentClip.answer.toUpperCase()) {
         document.getElementById("result").textContent = "Correct!";
+
+        if (currentTeam === 1) {
+            team1Score += 1;
+            document.getElementById("score1").textContent = "Score: " + team1Score;
+        } else {
+            team2Score += 1;
+            document.getElementById("score2").textContent = "Score: " + team2Score;
+        }
+
+        currentClip = null;
     } else {
         document.getElementById("result").textContent = "Wrong, try again!";
     }
