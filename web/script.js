@@ -61,6 +61,12 @@ function checkGuess() {
 
 document.getElementById("guess-btn").addEventListener("click", checkGuess);
 
+document.getElementById("guess-input").addEventListener("keydown", function (event) {
+    if (event.key === "Enter") {
+        checkGuess();
+    }
+});
+
 
 function showScreen(id) {
     document.getElementById("entrance-screen").classList.add("hidden");
