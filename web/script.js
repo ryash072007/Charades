@@ -11,6 +11,7 @@ const button = document.getElementById("play-btn");
 
 let timeLeft = 30;
 let timerId = null;
+let currentClip = null;
 
 function startTimer() {
     clearInterval(timerId);
@@ -32,15 +33,33 @@ function tick() {
 
 function playRandomClip() {
     const randomIndex = Math.floor(Math.random() * clips.length);
-    
-    video.src = clips[randomIndex].file;
-    document.getElementById("hint").textContent = makeBlanks(clips[randomIndex].answer);
+    currentClip = clips[randomIndex];
+
+    video.src = currentClip.file;
+    document.getElementById("hint").textContent = makeBlanks(currentClip.answer);
+    document.getElementById("result").textContent = "";
     video.play();
     startTimer();
     console.log("Playing clip number", randomIndex);
 }
 
 button.addEventListener("click", playRandomClip);
+
+function checkGuess() {
+    if (currentClip === null) {
+        return;
+    }
+
+    const guess = document.getElementById("guess-input").value.trim().toUpperCase();
+
+    if (guess === currentClip.answer.toUpperCase()) {
+        document.getElementById("result").textContent = "Correct!";
+    } else {
+        document.getElementById("result").textContent = "Wrong, try again!";
+    }
+}
+
+document.getElementById("guess-btn").addEventListener("click", checkGuess);
 
 
 function showScreen(id) {

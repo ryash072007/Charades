@@ -43,6 +43,12 @@ video {
 #hint {
     white-space: pre;
 }
+#guess-input {
+    text-transform: uppercase;
+}
+#guess-input::placeholder {
+    text-transform: none;
+}
 
 
 
