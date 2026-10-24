@@ -1,3 +1,5 @@
+const socket = io();
+
 const clips = [
     { file: "../examples/thumbs_up.mp4", answer: "thumbs up" },
     { file: "../examples/peace_sign.mp4", answer: "peace sign" },

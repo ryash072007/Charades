@@ -353,13 +353,41 @@ server.listen(PORT, function () {
 - `"...localhost:" + PORT` glues text and a number together (like an f-string, older style).
 - Nothing changes for me locally: still `node server.js`, still `localhost:3000`.
 
+### Step 15: Connect the page to the server (Socket.IO client)
+**Why:** the server has had its phone line open since Part 4, but the page never
+called it. Now the browser "dials" the server as soon as the page loads.
+Two halves of the same library:
+- **server side** (`server.js`, already done): `io.on("connection", ...)` = picks up calls.
+- **browser side** (this step): `io()` = makes the call.
+
+In `index.html`, **above** the `script.js` tag:
+```html
+<script src="/socket.io/socket.io.js"></script>   <!-- the browser half of Socket.IO -->
+<script src="script.js"></script>
+```
+- I never made a `socket.io/` folder. The Socket.IO server **automatically** serves
+  this file at that address. (Boilerplate: always exactly this line.)
+- Order matters: scripts run top to bottom, so the library has to load first and
+  `script.js` comes second. (Like `import` at the top of a Python file.)
+
+At the very top of `script.js`:
+```js
+const socket = io();   // call the server; keep the open line in `socket`
+```
+- `io()` with nothing inside = "call the same server this page came from"
+  (`localhost:3000` now, my Render address later).
+- In the browser, `socket` is **my** phone line. On the server, each player gets their own `socket`.
+
+**Test:** restart the server, open `localhost:3000` → the terminal prints
+`A player connected: <random id>`. Open a second tab → a second line with a different id.
+(2 tabs = 1 server, 2 sockets.)
+
 ---
 
 ## Coming next (the plan)
-1. Connect the page to the server (Socket.IO client), so "A player connected" appears.
-2. Real lobbies with Socket.IO **rooms**. The server keeps the answers and checks
+1. Real lobbies with Socket.IO **rooms**. The server keeps the answers and checks
    guesses, because anything in `script.js` can be read by anyone with F12.
-3. Deploy to **Render** or **Railway** (they keep a server running. GitHub Pages /
+2. Deploy to **Render** or **Railway** (they keep a server running. GitHub Pages /
    Netlify / Vercel only host plain files).
 
 Later: team colours, cream body text, small style tidy-ups.
