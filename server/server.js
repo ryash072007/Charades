@@ -14,6 +14,8 @@ io.on("connection", function (socket) {
     console.log("A player connected:", socket.id);
 });
 
-server.listen(3000, function () {
-    console.log("Server running on http://localhost:3000");
+const PORT = process.env.PORT || 3000;
+
+server.listen(PORT, function () {
+    console.log("Server running on http://localhost:" + PORT);
 });

@@ -258,7 +258,7 @@ Just a message so I know it started.
 **Run it:** `cd server` then `node server.js` (or `npm start`). Stop with `Ctrl + C`.
 **Right now nothing connects to it yet**, since the page has no client code.
 
-### Step 13: Express, so the server also sends out the web page (in progress)
+### Step 13: Express, so the server also sends out the web page (`added express to server game with files that it needs`)
 **Why:** before this, two programs were involved. **Live Server** sent the page files
 (requests, like letters) and `server.js` handled sockets (phone calls). A hosting site
 runs only **one** program, and Live Server only exists in VS Code. So `server.js` has to
@@ -324,14 +324,42 @@ app.use("/examples", express.static(path.join(__dirname, "../examples")));
 **Restart after editing `server.js`:** Node reads the file once when it starts, so press
 `Ctrl + C` and run `node server.js` again. (Live Server auto-reloaded, Node doesn't.)
 
+### Step 14: Let the hosting site choose the port
+**Why:** on my laptop I pick door 3000. But a hosting site like **Render** runs lots of
+people's servers on its computers, so **it** decides which door my server gets, and tells
+my program the number when it starts. My code has to listen on *that* door, or nobody
+can reach the game.
+
+**How it tells me: environment variables.** When any program starts, the computer hands
+it a little list of settings, like a sticky note on the box: `PORT = 10000`. Those are
+**environment variables**. Node puts them in `process.env` (an object, like a Python
+dict). `process` = "this running program", `env` = its environment.
+Python equivalent: `os.environ.get("PORT")`.
+On my laptop nobody writes a `PORT` sticky note, so `process.env.PORT` is `undefined`
+(JS's "nothing here", similar to `None`).
+
+```js
+const PORT = process.env.PORT || 3000;   // use the host's port, or 3000 if there isn't one
+
+server.listen(PORT, function () {
+    console.log("Server running on http://localhost:" + PORT);
+});
+```
+- **`||`** means "or", like Python's `or`: if the left side is empty/missing, use the
+  right side. Python: `PORT = os.environ.get("PORT") or 3000`.
+  - On Render: `10000 || 3000` → `10000`
+  - On my laptop: `undefined || 3000` → `3000`
+- `PORT` in capitals is just a habit for "a setting that never changes" (same as Python).
+- `"...localhost:" + PORT` glues text and a number together (like an f-string, older style).
+- Nothing changes for me locally: still `node server.js`, still `localhost:3000`.
+
 ---
 
 ## Coming next (the plan)
-1. Use `const PORT = process.env.PORT || 3000` (hosting sites choose the port for you).
-2. Connect the page to the server (Socket.IO client), so "A player connected" appears.
-3. Real lobbies with Socket.IO **rooms**. The server keeps the answers and checks
+1. Connect the page to the server (Socket.IO client), so "A player connected" appears.
+2. Real lobbies with Socket.IO **rooms**. The server keeps the answers and checks
    guesses, because anything in `script.js` can be read by anyone with F12.
-4. Deploy to **Render** or **Railway** (they keep a server running. GitHub Pages /
+3. Deploy to **Render** or **Railway** (they keep a server running. GitHub Pages /
    Netlify / Vercel only host plain files).
 
 Later: team colours, cream body text, small style tidy-ups.
@@ -344,7 +372,9 @@ Later: team colours, cream body text, small style tidy-ups.
 | `let x = 5;` / `const x = 5;` | `x = 5` |
 | `[1, 2, 3]` array | list |
 | `{ a: 1 }` object, `obj.a` | dict, `d["a"]` |
-| `null` | `None` |
+| `null` / `undefined` | `None` |
+| `a \|\| b` | `a or b` |
+| `process.env.PORT` | `os.environ.get("PORT")` |
 | `===` | `==` |
 | `console.log(x)` | `print(x)` |
 | `s.trim()` | `s.strip()` |
