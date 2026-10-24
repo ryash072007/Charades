@@ -258,12 +258,76 @@ Just a message so I know it started.
 **Run it:** `cd server` then `node server.js` (or `npm start`). Stop with `Ctrl + C`.
 **Right now nothing connects to it yet**, since the page has no client code.
 
+### Step 13: Express, so the server also sends out the web page (in progress)
+**Why:** before this, two programs were involved. **Live Server** sent the page files
+(requests, like letters) and `server.js` handled sockets (phone calls). A hosting site
+runs only **one** program, and Live Server only exists in VS Code. So `server.js` has to
+send the page files too. **Express** makes that easy (it's like Flask in Python).
+
+Installed with `npm install express` (inside `server/`), so it now shows in `package.json`.
+
+**Express vs Socket.IO, in my own words:**
+- **Express** sends the browser the files the game needs (`index.html`, `script.js`, the `.mp4` clips).
+  Like a **waiter**: the browser orders (a request), and Express brings that file back.
+  The browser always has to ask first.
+- **Socket.IO** lets the server and browser message each other **at any time, without
+  asking first**. Like a **WhatsApp group**: new messages just appear. That's how
+  "Team 1 scored!" will reach every player's screen instantly.
+- **`server.listen(3000)`** is what opens door 3000 and keeps the program running.
+  Both Express and Socket.IO work through that same door.
+
+```js
+const express = require("express");   // library that sends out web pages
+const http = require("http");         // built into Node: basic request-answering machinery
+const path = require("path");         // built into Node: folder paths (like Python's os.path)
+const { Server } = require("socket.io");
+
+const app = express();                   // Express app: knows how to answer "send me a file"
+const server = http.createServer(app);   // the real server, using app to answer requests
+const io = new Server(server);           // Socket.IO shares that SAME server
+
+app.use(express.static(path.join(__dirname, "../web")));   // share the web/ folder
+
+io.on("connection", function (socket) {
+    console.log("A player connected:", socket.id);
+});
+
+server.listen(3000, function () {        // open door 3000, then print
+    console.log("Server running on http://localhost:3000");
+});
+```
+- **One door, two jobs:** the `http` server owns port 3000. Letters (requests for files)
+  go to Express, phone calls (sockets) go to Socket.IO.
+- **`cors` removed:** the page and the socket come from the same address now
+  (`localhost:3000`), so no permission slip is needed.
+- `__dirname` = the folder this file is in (`server/`), so `"../web"` = up one, into `web/`.
+- `express.static(folder)` = "when a browser asks for a file, look in this folder and send it".
+  `localhost:3000/` sends `index.html`, which then asks for `style.css` and `script.js`.
+
+**Run it:** stop Live Server, open a terminal, `cd server`, `node server.js`, then open
+**http://localhost:3000**. The server must **keep running in that terminal** the whole time
+(it prints one line and then waits; that's correct). If the page doesn't load, check
+the terminal is still running it. `Ctrl + C` stops it.
+
+**Sharing the clips too** (second line added):
+```js
+app.use(express.static(path.join(__dirname, "../web")));
+app.use("/examples", express.static(path.join(__dirname, "../examples")));
+```
+- The page asks for `../examples/thumbs_up.mp4`. The page is at the top level (`/`) and
+  you can't go "up" from the top, so the browser asks for `/examples/thumbs_up.mp4`.
+- `app.use("/examples", ...)` means "for addresses starting with `/examples`, look in the
+  real `examples/` folder". So `/examples/thumbs_up.mp4` → `examples/thumbs_up.mp4`.
+- The first line has no address, so it covers everything else (the `web/` files).
+- No clip paths in `script.js` had to change.
+
+**Restart after editing `server.js`:** Node reads the file once when it starts, so press
+`Ctrl + C` and run `node server.js` again. (Live Server auto-reloaded, Node doesn't.)
+
 ---
 
 ## Coming next (the plan)
-1. Install **Express** so the server also sends out the web page itself
-   (`web/`, plus `examples/` at `/examples`). Use `const PORT = process.env.PORT || 3000`
-   (hosting sites choose the port for you). Then open `localhost:3000` instead of Live Server.
+1. Use `const PORT = process.env.PORT || 3000` (hosting sites choose the port for you).
 2. Connect the page to the server (Socket.IO client), so "A player connected" appears.
 3. Real lobbies with Socket.IO **rooms**. The server keeps the answers and checks
    guesses, because anything in `script.js` can be read by anyone with F12.
