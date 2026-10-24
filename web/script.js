@@ -114,6 +114,8 @@ function createLobby() {
         return;
     }
 
+    socket.emit("createLobby", name);
+
     const code = Math.random().toString(36).slice(2, 6).toUpperCase();
     document.getElementById("lobby-code").textContent = code;
     showScreen("lobby-screen");

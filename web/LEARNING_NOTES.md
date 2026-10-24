@@ -382,6 +382,35 @@ const socket = io();   // call the server; keep the open line in `socket`
 `A player connected: <random id>`. Open a second tab → a second line with a different id.
 (2 tabs = 1 server, 2 sockets.)
 
+### Step 16: The browser sends the server a message (`emit` / `on`)
+**Why:** for real lobbies, the server has to *know* when someone clicks "Create lobby".
+So the browser sends it a message over the open line.
+
+A Socket.IO message is like a **WhatsApp message with a label**:
+- `socket.emit("label", data)` = **send** a message with that label and some data.
+- `socket.on("label", function (data) { ... })` = "**when** a message with that label
+  arrives, run this". Same pattern as `addEventListener("click", ...)`.
+- The label is a name I make up. It just has to be **spelled the same on both sides**.
+
+In `script.js`, inside `createLobby()` after the name check:
+```js
+socket.emit("createLobby", name);   // tell the server: this person wants a lobby
+```
+
+In `server.js`, **inside** `io.on("connection", function (socket) { ... })`:
+```js
+socket.on("createLobby", function (name) {
+    console.log(name, "wants to create a lobby");
+});
+```
+- It goes inside the connection function because it's about **this player's** line
+  (`socket`). Each player who connects gets their own listener.
+- `name` on the server is whatever the browser sent (e.g. `"Suraj"`).
+- The lobby code is still made up in the browser for now (fixed next step).
+
+**Test:** restart the server, refresh the page, type a name, click Create lobby →
+terminal prints `Suraj wants to create a lobby`.
+
 ---
 
 ## Coming next (the plan)

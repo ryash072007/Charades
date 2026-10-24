@@ -12,6 +12,10 @@ app.use("/examples", express.static(path.join(__dirname, "../examples")));
 
 io.on("connection", function (socket) {
     console.log("A player connected:", socket.id);
+
+    socket.on("createLobby", function (name) {
+        console.log(name, "wants to create a lobby");
+    });
 });
 
 const PORT = process.env.PORT || 3000;
